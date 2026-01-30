@@ -16,8 +16,8 @@ zhipuai>=2.1.0
 
 # Utilities
 python-dotenv==1.0.1
+# Required by diffusers on some environments; safe to include for consistent resolution.
+importlib-metadata>=6.0
 
 # Imaging (for gradio compatibility)
 pillow>=8.0,<12.0
-
-importlib-metadata>=6.0
