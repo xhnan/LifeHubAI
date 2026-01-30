@@ -1,0 +1,23 @@
+# FastAPI
+fastapi>=0.115.2,<1.0
+starlette>=0.40.0,<1.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.2
+
+# Database
+psycopg2-binary==2.9.9
+
+# AI/LLM
+langchain
+langchain-openai
+
+# TTS
+zhipuai>=2.1.0
+
+# Utilities
+python-dotenv==1.0.1
+
+# Imaging (for gradio compatibility)
+pillow>=8.0,<12.0
+
+importlib-metadata>=6.0
