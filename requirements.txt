@@ -21,3 +21,13 @@ importlib-metadata>=6.0
 
 # Imaging (for gradio compatibility)
 pillow>=8.0,<12.0
+
+# gRPC
+# NOTE: For Windows or Python 3.7, use older version with pre-built wheels:
+#   pip install grpcio==1.48.2 grpcio-tools==1.48.2 --only-binary grpcio,grpcio-tools
+# Or use platform-specific install scripts:
+#   Windows: scripts\install_grpc.bat
+#   Linux/Mac: bash scripts/install_grpc.sh
+grpcio>=1.48.0,<2.0
+grpcio-tools>=1.48.0,<2.0
+protobuf>=4.21.0

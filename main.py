@@ -48,13 +48,27 @@ async def root():
 @app.get("/health", summary="健康检查")
 async def health_check():
     """整体健康检查"""
-    return {
+    import os
+
+    grpc_enabled = os.getenv("GRPC_ENABLED", "true").lower() in ("true", "1", "yes", "on")
+
+    response = {
         "status": "healthy",
+        "servers": {
+            "http": "running",
+            "grpc": "running" if grpc_enabled else "disabled"
+        },
         "services": {
             "code_generation": "/api/codegen/health",
             "text_to_speech": "/api/tts/health"
         }
     }
+
+    if grpc_enabled:
+        grpc_port = os.getenv("GRPC_SERVER_PORT", "50051")
+        response["grpc_endpoint"] = f"localhost:{grpc_port}"
+
+    return response
 
 
 # 全局异常处理

@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package lifehub;
+
+service Health {
+  rpc Check(Empty) returns (HealthResponse) {}
+  rpc CheckService(ServiceRequest) returns (ServiceHealthResponse) {}
+}
+
+message Empty {}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 timestamp = 3;
+}
+
+message ServiceRequest {
+  string service_name = 1;
+}
+
+message ServiceHealthResponse {
+  string status = 1;
+  bool database_connected = 2;
+  string message = 3;
+}
