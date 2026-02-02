@@ -1,0 +1,48 @@
+基于以下信息，生成 MyBatis Mapper XML 配置文件。
+
+## 实体信息
+Java 类名: {class_name}
+完整包路径: {package_path}
+表名: {table_name}
+模块名: {module_name}
+
+## 字段信息
+{columns_info}
+
+## 要求
+请生成简洁的 MyBatis Mapper XML 文件，包含以下内容：
+
+1. **XML 声明和 DTD**：
+   - 使用 MyBatis 3 的 DTD
+   - 编码设置为 UTF-8
+
+2. **mapper 根元素**：
+   - namespace：`{package_path}.mapper.{class_name}Mapper`
+
+3. **文件路径说明**：
+   - XML 文件存放在：`src/main/resources/mapper/{module_name}/`
+   - 例如：sys_user 表的 XML 文件在 `src/main/resources/mapper/sys/SysUserMapper.xml`
+
+4. **通用 SQL 片段**：
+   - 定义 Base_Column_List（所有字段列表）
+   - 使用 `<sql>` 标签
+
+## 输出格式
+请只输出 XML 代码，代码块使用 ```xml 包裹。
+
+## 示例格式
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="{package_path}.mapper.{class_name}Mapper">
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id,field_name,create_time,update_time
+    </sql>
+
+</mapper>
+```
+
+请根据上述要求和提供的字段信息生成代码。
+注意：如果使用 MyBatis Plus，大部分 CRUD 不需要写 XML，此文件主要预留用于自定义复杂查询。

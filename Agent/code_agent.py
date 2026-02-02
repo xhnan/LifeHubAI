@@ -8,6 +8,9 @@ from typing import List, Dict, Any, Callable
 from dotenv import load_dotenv
 from openai import OpenAI
 from .tools.database_tool import get_db_tool
+from .tools.file_tool import get_file_tool
+from .prompt_loader import PromptLoader
+from .code_validator import CodeValidator
 
 # 加载环境变量
 load_dotenv()
@@ -228,17 +231,169 @@ class CodeGenAgent(SimpleAgent):
     集成数据库操作工具
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        output_dir: str = None,
+        package_prefix: str = None,
+        enable_validation: bool = None,
+        enable_llm_validation: bool = True,
+        enable_compile_check: bool = True,
+        enable_prompt_check: bool = True
+    ):
+        """
+        初始化 Agent
+
+        Args:
+            output_dir: 代码生成输出目录（默认从环境变量 CODE_OUTPUT_DIR 读取）
+            package_prefix: 包名前缀（默认从环境变量 CODE_PACKAGE_PREFIX 读取）
+            enable_validation: 是否启用验证（默认从环境变量读取）
+            enable_llm_validation: 是否启用 LLM 验证
+            enable_compile_check: 是否启用编译检查
+            enable_prompt_check: 是否启用 Prompt 符合度检查
+        """
         # 初始化基类
         super().__init__()
 
-        # 初始化数据库工具
+        # 从环境变量读取配置
+        self.output_dir = output_dir or os.getenv("CODE_OUTPUT_DIR", "./output")
+        self.package_prefix = package_prefix or os.getenv("CODE_PACKAGE_PREFIX", "com.xhn")
+
+        # 验证开关配置（从环境变量或参数读取）
+        self.enable_validation = enable_validation if enable_validation is not None else \
+                                 os.getenv("CODE_ENABLE_VALIDATION", "true").lower() == "true"
+        self.enable_llm_validation = enable_llm_validation and \
+                                    os.getenv("CODE_ENABLE_LLM_VALIDATION", "true").lower() == "true"
+        self.enable_compile_check = enable_compile_check and \
+                                    os.getenv("CODE_ENABLE_COMPILE_CHECK", "true").lower() == "true"
+        self.enable_prompt_check = enable_prompt_check and \
+                                   os.getenv("CODE_ENABLE_PROMPT_CHECK", "true").lower() == "true"
+
+        # 确保输出目录存在
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        # 初始化工具
         self.db = get_db_tool()
+        self.file = get_file_tool(base_dir=self.output_dir)
+        self.prompt_loader = PromptLoader()
+
+        # 初始化验证器
+        if self.enable_validation:
+            self.validator = CodeValidator()
+            print(f"✓ 代码验证器已启用")
+        else:
+            self.validator = None
+            print(f"⊘ 代码验证器已禁用")
 
         # 注册数据库工具
         self._register_database_tools()
 
         print(f"✓ 代码生成 Agent 就绪")
+        print(f"  ✓ 输出目录: {os.path.abspath(self.output_dir)}")
+        print(f"  ✓ 包名前缀: {self.package_prefix}")
+
+        # 显示验证配置
+        if self.enable_validation:
+            print(f"  ✓ 验证配置:")
+            print(f"     - LLM 验证: {'✓' if self.enable_llm_validation else '⊘'}")
+            print(f"     - 编译检查: {'✓' if self.enable_compile_check else '⊘'}")
+            print(f"     - Prompt 检查: {'✓' if self.enable_prompt_check else '⊘'}")
+
+    def _generate_code_wrapper(self, table_name: str) -> str:
+        """
+        代码生成工具的包装函数
+        供 Agent 调用，返回格式化的结果信息
+
+        Args:
+            table_name: 表名
+
+        Returns:
+            格式化的结果字符串
+        """
+        try:
+            result = self.generate_code_for_table(
+                table_name=table_name,
+                components=['entity', 'mapper', 'service', 'service_impl', 'controller', 'mapper_xml'],
+                overwrite_rules=None  # 使用默认规则
+            )
+
+            # 构建详细的结果报告
+            report_lines = [
+                f"表: {table_name}",
+                f"生成文件: {len(result.get('generated_files', []))} 个",
+                f"跳过文件: {len(result.get('skipped_files', []))} 个",
+            ]
+
+            # 显示生成的文件
+            if result.get('generated_files'):
+                report_lines.append("\n✅ 生成的文件:")
+                for f in result['generated_files']:
+                    report_lines.append(f"   - {f}")
+
+            # 显示跳过的文件
+            if result.get('skipped_files'):
+                report_lines.append("\n⊘ 跳过的文件:")
+                for f in result['skipped_files']:
+                    report_lines.append(f"   - {f}")
+
+            # 显示错误
+            if result.get('errors'):
+                report_lines.append("\n❌ 错误详情:")
+                for err in result['errors']:
+                    report_lines.append(f"   - {err}")
+
+            # 判断总体成功或失败
+            if result['success']:
+                report_lines.insert(0, f"✅ 成功为表 {table_name} 生成代码！")
+                report_lines.append(f"\n输出目录: {self.output_dir}")
+            else:
+                report_lines.insert(0, f"⚠️ 表 {table_name} 代码生成部分完成")
+
+            return "\n".join(report_lines)
+
+        except Exception as e:
+            return f"❌ 代码生成异常: {str(e)}\n异常类型: {type(e).__name__}"
+
+    def _generate_batch_wrapper(self, table_names: list) -> str:
+        """
+        批量代码生成工具的包装函数
+
+        Args:
+            table_names: 表名列表
+
+        Returns:
+            格式化的结果字符串
+        """
+        try:
+            results = []
+            total_generated = 0
+            total_skipped = 0
+
+            for table_name in table_names:
+                result = self.generate_code_for_table(
+                    table_name=table_name,
+                    components=['entity', 'mapper', 'service', 'service_impl', 'controller', 'mapper_xml'],
+                    overwrite_rules=None
+                )
+
+                if result['success']:
+                    total_generated += len(result['generated_files'])
+                    total_skipped += len(result['skipped_files'])
+                    results.append(f"✅ {table_name}: {len(result['generated_files'])} 个文件")
+                else:
+                    results.append(f"❌ {table_name}: {result.get('message', '失败')}")
+
+            summary = "\n".join(results)
+            return (
+                f"📦 批量生成完成！\n"
+                f"共处理 {len(table_names)} 个表\n"
+                f"生成文件: {total_generated} 个\n"
+                f"跳过文件: {total_skipped} 个\n"
+                f"输出目录: {self.output_dir}\n\n"
+                f"详情:\n{summary}"
+            )
+
+        except Exception as e:
+            return f"❌ 批量代码生成异常: {str(e)}"
 
     def _register_database_tools(self):
         """注册数据库相关工具"""
@@ -320,6 +475,558 @@ class CodeGenAgent(SimpleAgent):
                 "required": ["table_name"]
             }
         )
+
+        # 工具 6: 为单个表生成代码
+        self.register_tool(
+            name="generate_code_for_table",
+            func=self._generate_code_wrapper,
+            description="为指定的数据库表生成完整的 Java 代码（Entity、Mapper、Service、Controller等）。",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "table_name": {
+                        "type": "string",
+                        "description": "要生成代码的表名，例如 'sys_user'"
+                    }
+                },
+                "required": ["table_name"]
+            }
+        )
+
+        # 工具 7: 批量生成多个表的代码
+        self.register_tool(
+            name="generate_code_for_tables",
+            func=self._generate_batch_wrapper,
+            description="为多个数据库表批量生成 Java 代码。可以指定表名列表。",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "table_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要生成代码的表名列表，例如 ['sys_user', 'sys_role', 'sys_menu']"
+                    }
+                },
+                "required": ["table_names"]
+            }
+        )
+
+    def _save_debug_info(self, component: str, content: str, output_dir: str = None) -> None:
+        """
+        保存 LLM 原始输出到调试文件
+
+        Args:
+            component: 组件名称
+            content: 原始内容
+            output_dir: 输出目录（默认使用 self.output_dir）
+        """
+        if output_dir is None:
+            output_dir = self.output_dir
+
+        debug_file = os.path.join(output_dir, f"debug_{component}_output.txt")
+        try:
+            with open(debug_file, 'w', encoding='utf-8') as f:
+                f.write(f"=== {component} LLM Output ===\n\n")
+                f.write(content)
+            print(f"💾 调试信息已保存: {debug_file}")
+        except Exception as debug_err:
+            print(f"⚠️ 无法保存调试信息: {debug_err}")
+
+    def _write_component_file(
+        self,
+        file_path: str,
+        code: str,
+        overwrite: bool,
+        component_name: str,
+        errors_list: list = None
+    ) -> dict:
+        """
+        统一的组件文件写入逻辑
+
+        Args:
+            file_path: 文件路径
+            code: 代码内容
+            overwrite: 是否覆盖
+            component_name: 组件名称（用于错误消息）
+            errors_list: 错误列表（可选）
+
+        Returns:
+            {
+                'success': True/False,
+                'action': 'generated'/'skipped'/'failed',
+                'message': '描述信息'
+            }
+        """
+        result = {
+            'success': False,
+            'action': 'failed',
+            'message': ''
+        }
+
+        try:
+            # 检查文件是否已存在
+            exists_result = self.file.file_exists(file_path)
+            should_skip = (
+                exists_result.get('success', False) and
+                exists_result.get('exists', False) and
+                not overwrite
+            )
+
+            if should_skip:
+                result['action'] = 'skipped'
+                result['message'] = f"⊘ 跳过已存在: {file_path}"
+                result['success'] = True
+                print(result['message'])
+            else:
+                write_result = self.file.write_file(file_path, code, overwrite=overwrite)
+                if write_result['success']:
+                    result['action'] = 'generated'
+                    result['message'] = f"✅ 生成: {file_path} ({write_result.get('size', 0)} 字节)"
+                    result['success'] = True
+                    print(result['message'])
+                else:
+                    error_msg = f"{component_name}: 写入失败 | 错误: {write_result.get('error', '未知')} | 路径: {file_path}"
+                    result['message'] = f"❌ {error_msg}"
+                    if errors_list:
+                        errors_list.append(error_msg)
+                    print(result['message'])
+
+        except Exception as e:
+            error_msg = f"{component_name}: 写入异常 | {type(e).__name__}: {str(e)} | 路径: {file_path}"
+            result['message'] = f"❌ {error_msg}"
+            if errors_list:
+                errors_list.append(error_msg)
+            print(result['message'])
+
+        return result
+
+    def _generate_entity_component(
+        self,
+        context: dict,
+        overwrite_rules: dict,
+        errors_list: list,
+        generated_files: list,
+        skipped_files: list
+    ) -> bool:
+        """
+        生成 Entity 组件（包括 BaseEntity 和 Entity 两个类）
+
+        Args:
+            context: 上下文信息
+            overwrite_rules: 覆盖规则
+            errors_list: 错误列表
+            generated_files: 已生成文件列表
+            skipped_files: 已跳过文件列表
+
+        Returns:
+            是否成功（部分成功也返回 True）
+        """
+        try:
+            # 1. 加载并填充 Prompt
+            prompt = self.prompt_loader.fill_template('entity', context)
+
+            # 2. 调用 LLM 生成代码
+            response = self.client.chat.completions.create(
+                model=os.getenv("LLM_MODEL", "deepseek-chat"),
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            generated_code = response.choices[0].message.content
+
+            # 3. 分离两个类的代码（Base 类和继承类）
+            code_blocks = self._extract_multiple_code_blocks(generated_code)
+
+            # 4. 验证代码块数量
+            if len(code_blocks) < 2:
+                error_detail = (
+                    f"entity: LLM 未返回 2 个代码块，只返回了 {len(code_blocks)} 个。"
+                    f"原始输出长度: {len(generated_code)}"
+                )
+                errors_list.append(error_detail)
+                print(f"⚠️ {error_detail}")
+                self._save_debug_info('entity', generated_code)
+                return False
+
+            # 5. 写入 BaseEntity 文件
+            table_name = context.get('table_name', '')
+            base_file_path = self._get_file_path(table_name, 'base_entity', context)
+            base_overwrite = overwrite_rules.get('base_entity', True)
+
+            base_result = self._write_component_file(
+                base_file_path,
+                code_blocks[0],
+                base_overwrite,
+                'base_entity',
+                errors_list
+            )
+
+            if base_result['success'] and base_result['action'] == 'generated':
+                generated_files.append(base_file_path)
+
+            # 6. 写入 Entity 文件
+            entity_file_path = self._get_file_path(table_name, 'entity', context)
+            entity_overwrite = overwrite_rules.get('entity', False)
+
+            entity_result = self._write_component_file(
+                entity_file_path,
+                code_blocks[1],
+                entity_overwrite,
+                'entity',
+                errors_list
+            )
+
+            if entity_result['success'] and entity_result['action'] == 'generated':
+                generated_files.append(entity_file_path)
+            elif entity_result['action'] == 'skipped':
+                skipped_files.append(entity_file_path)
+
+            return True
+
+        except Exception as e:
+            import traceback
+            error_detail = f"entity: {type(e).__name__}: {str(e)}\n堆栈: {traceback.format_exc()[-500:]}"
+            errors_list.append(error_detail)
+            print(f"❌ 异常: entity - {type(e).__name__}: {str(e)}")
+            return False
+
+    def generate_code_for_table(
+        self,
+        table_name: str,
+        components: list = None,
+        overwrite_rules: dict = None
+    ) -> Dict[str, Any]:
+        """
+        为指定表生成 Java 代码
+
+        Args:
+            table_name: 数据库表名
+            components: 要生成的组件列表，默认为 ['entity', 'mapper', 'service', 'service_impl', 'controller']
+                        可选值: 'entity', 'mapper', 'service', 'service_impl', 'controller', 'mapper_xml'
+            overwrite_rules: 覆盖规则，例如 {'entity': False, 'service_impl': True}
+                            True=强制覆盖, False=跳过已存在文件
+
+        Returns:
+            {
+                "success": True/False,
+                "table_name": "表名",
+                "generated_files": ["生成的文件路径列表"],
+                "skipped_files": ["跳过的文件路径列表"],
+                "errors": ["错误列表"]
+            }
+        """
+        if components is None:
+            components = ['entity', 'mapper', 'service', 'service_impl', 'controller']
+
+        if overwrite_rules is None:
+            # 默认规则：base_entity 强制覆盖，其他类如果存在则不覆盖
+            overwrite_rules = {
+                'base_entity': True,      # 基类强制覆盖
+                'entity': False,          # 继承类不覆盖
+                'mapper': False,          # Mapper 不覆盖
+                'mapper_xml': False,      # XML 不覆盖
+                'service': False,         # Service 不覆盖
+                'service_impl': False,    # ServiceImpl 不覆盖
+                'controller': False       # Controller 不覆盖
+            }
+
+        try:
+            # 1. 获取表结构
+            schema_result = self.db.get_table_schema(table_name)
+            if not schema_result['success']:
+                return {
+                    "success": False,
+                    "error": f"获取表结构失败: {schema_result.get('error')}"
+                }
+
+            # 2. 构建上下文
+            context = self.prompt_loader.build_context_for_table(
+                table_name,
+                schema_result,
+                self.package_prefix
+            )
+
+            generated_files = []
+            skipped_files = []
+            errors = []
+
+            # 3. 为每个组件生成代码
+            for component in components:
+                try:
+                    # Entity 组件特殊处理：生成两个文件（Base{class_name} 和 {class_name}）
+                    if component == 'entity':
+                        self._generate_entity_component(
+                            context=context,
+                            overwrite_rules=overwrite_rules,
+                            errors_list=errors,
+                            generated_files=generated_files,
+                            skipped_files=skipped_files
+                        )
+                        continue
+
+                    # 其他组件的正常处理流程
+                    # 1. 加载并填充 Prompt
+                    prompt = self.prompt_loader.fill_template(component, context)
+
+                    # 2. 调用 LLM 生成代码
+                    response = self.client.chat.completions.create(
+                        model=os.getenv("LLM_MODEL", "deepseek-chat"),
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+
+                    generated_code = response.choices[0].message.content
+
+                    # 3. 提取代码（使用健壮的提取方法）
+                    original_code = generated_code  # 保存原始输出用于调试
+
+                    # 根据组件类型确定期望的语言
+                    expected_lang = 'xml' if component == 'mapper_xml' else 'java'
+
+                    # 使用健壮的提取方法
+                    success, generated_code = self._extract_single_code_block(
+                        generated_code,
+                        expected_lang=expected_lang
+                    )
+
+                    if not success:
+                        # 提取失败，记录错误并跳过此组件
+                        error_detail = f"{component}: 无法从 LLM 输出中提取有效的代码块"
+                        errors.append(error_detail)
+                        print(f"⚠️ {error_detail}")
+                        self._save_debug_info(component, original_code)
+                        continue
+
+                    # 4. 代码验证（如果启用）
+                    if self.validator and self.enable_validation:
+                        validation_result = self.validator.validate_all(
+                            code=generated_code,
+                            component=component,
+                            context=context,
+                            enable_llm=self.enable_llm_validation,
+                            enable_compile=self.enable_compile_check,
+                            enable_prompt=self.enable_prompt_check
+                        )
+
+                        # 如果验证失败，记录问题但继续写入（可选择跳过）
+                        if not validation_result['success']:
+                            validation_issues = []
+
+                            if validation_result.get('llm_check') and not validation_result['llm_check']['passed']:
+                                issues = validation_result['llm_check'].get('issues', [])
+                                validation_issues.extend([f"[LLM] {i}" for i in issues])
+
+                            if validation_result.get('compile_check') and not validation_result['compile_check']['passed']:
+                                errs = validation_result['compile_check'].get('errors', [])[:3]
+                                validation_issues.extend([f"[编译] {e}" for e in errs])
+
+                            if validation_result.get('prompt_check') and not validation_result['prompt_check']['passed']:
+                                missing = validation_result['prompt_check'].get('missing_items', [])
+                                validation_issues.extend([f"[符合度] {m}" for m in missing])
+
+                            # 记录验证问题
+                            if validation_issues:
+                                error_detail = f"{component}: 验证未通过 - " + "; ".join(validation_issues[:3])
+                                errors.append(error_detail)
+                                print(f"⚠️ {error_detail}")
+
+                                # 保存验证失败的代码供调试
+                                self._save_debug_info(f"{component}_validation_failed", generated_code)
+
+                                # 可选：跳过写入验证失败的代码
+                                # continue
+
+                    # 5. 确定文件路径并写入
+                    file_path = self._get_file_path(table_name, component, context)
+                    overwrite = overwrite_rules.get(component, False)
+
+                    # 使用统一的文件写入方法
+                    write_result = self._write_component_file(
+                        file_path=file_path,
+                        code=generated_code,
+                        overwrite=overwrite,
+                        component_name=component,
+                        errors_list=errors
+                    )
+
+                    # 根据结果更新文件列表
+                    if write_result['success']:
+                        if write_result['action'] == 'generated':
+                            generated_files.append(file_path)
+                        elif write_result['action'] == 'skipped':
+                            skipped_files.append(file_path)
+
+                except Exception as e:
+                    import traceback
+                    error_detail = f"{component}: {type(e).__name__}: {str(e)}\n堆栈: {traceback.format_exc()[-500:]}"
+                    errors.append(error_detail)
+                    print(f"❌ 异常: {component} - {type(e).__name__}: {str(e)}")
+
+            return {
+                "success": len(errors) == 0,
+                "table_name": table_name,
+                "generated_files": generated_files,
+                "skipped_files": skipped_files,
+                "errors": errors,
+                "message": f"成功生成 {len(generated_files)} 个文件，跳过 {len(skipped_files)} 个文件"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"代码生成失败: {str(e)}"
+            }
+
+    def _extract_single_code_block(self, text: str, expected_lang: str = None) -> tuple:
+        """
+        从文本中提取单个代码块（健壮版本）
+
+        Args:
+            text: 包含代码块标记的文本
+            expected_lang: 期望的语言类型（java/xml），None 表示自动检测
+
+        Returns:
+            (success: bool, code: str) - 成功标志和提取的代码
+        """
+        import re
+
+        # 使用正则表达式匹配代码块，处理各种格式变体
+        # 支持的格式：
+        # ```java ... ```
+        # ```java\n ... \n```
+        # ``` ... ```
+        # ```xml ... ```
+        patterns = [
+            r'```(?:java|xml)?\s*\n(.*?)\n```',  # 标准格式，可能有换行
+            r'```(?:java|xml)?\s*\n(.*?)```',    # 结束标记无换行
+            r'```(?:java|xml)? ([^`]+)```',      # 单行格式
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text, re.DOTALL)
+            if match:
+                code = match.group(1).strip()
+                # 过滤掉明显无效的内容（如太短）
+                if len(code) > 50:
+                    return True, code
+
+        # 如果正则表达式失败，尝试简单的字符串查找（作为后备方案）
+        for marker in ['```java', '```xml', '```']:
+            if marker in text:
+                start = text.find(marker) + len(marker)
+                # 查找结束标记
+                end = text.find('```', start)
+                if end != -1:
+                    code = text[start:end].strip()
+                    if len(code) > 50:
+                        return True, code
+                else:
+                    # 没有结束标记，取到末尾
+                    code = text[start:].strip()
+                    if len(code) > 50:
+                        return True, code
+
+        return False, ''
+
+    def _extract_multiple_code_blocks(self, text: str) -> list:
+        """
+        从包含多个代码块的文本中提取所有 Java 代码块
+        健壮版本：处理各种格式的代码块标记
+
+        Args:
+            text: 包含多个 ```java 代码块的文本
+
+        Returns:
+            代码块列表，每个元素是纯 Java 代码（不含 ```java 标记）
+        """
+        code_blocks = []
+        lines = text.split('\n')
+        current_block = []
+        in_code_block = False
+
+        for line in lines:
+            stripped = line.strip()
+
+            # 检查是否是代码块标记（开始或结束）
+            if stripped.startswith('```'):
+                if not in_code_block:
+                    # 开始新的代码块
+                    if 'java' in stripped.lower():
+                        in_code_block = True
+                        current_block = []
+                        continue
+                else:
+                    # 结束当前代码块（接受任何 ``` 变体）
+                    # 只有在有内容时才保存
+                    if current_block:
+                        code_content = '\n'.join(current_block).strip()
+                        # 跳过空代码块或过短的无效代码块
+                        if len(code_content) > 50:  # 至少要有一定长度
+                            code_blocks.append(code_content)
+                    in_code_block = False
+                    current_block = []
+                    continue
+
+            # 收集代码块内容
+            if in_code_block:
+                current_block.append(line)
+
+        # 处理最后一个代码块（如果没有结束标记）
+        if in_code_block and current_block:
+            code_content = '\n'.join(current_block).strip()
+            if len(code_content) > 50:
+                code_blocks.append(code_content)
+
+        return code_blocks
+
+    def _get_file_path(self, table_name: str, component: str, context: dict) -> str:
+        """
+        获取生成文件的完整路径
+
+        Args:
+            table_name: 表名
+            component: 组件类型
+            context: 上下文信息
+
+        Returns:
+            文件路径（相对于 output_dir）
+        """
+        package_path = context['package_path']
+        class_name = context['class_name']
+
+        if component == 'base_entity':
+            filename = f"Base{class_name}.java"
+            subdir = f"src/main/java/{package_path.replace('.', '/')}/model"
+
+        elif component == 'entity':
+            filename = f"{class_name}.java"
+            subdir = f"src/main/java/{package_path.replace('.', '/')}/model"
+
+        elif component == 'mapper':
+            filename = f"{class_name}Mapper.java"
+            subdir = f"src/main/java/{package_path.replace('.', '/')}/mapper"
+
+        elif component == 'service':
+            filename = f"{class_name}Service.java"
+            subdir = f"src/main/java/{package_path.replace('.', '/')}/service"
+
+        elif component == 'service_impl':
+            filename = f"{class_name}ServiceImpl.java"
+            subdir = f"src/main/java/{package_path.replace('.', '/')}/service/impl"
+
+        elif component == 'controller':
+            filename = f"{class_name}Controller.java"
+            subdir = f"src/main/java/{package_path.replace('.', '/')}/controller"
+
+        elif component == 'mapper_xml':
+            filename = f"{class_name}Mapper.xml"
+            # Mapper XML 放在 resources 目录，与 Java 文件保持一致的项目结构
+            module = context.get('module_name', '')
+            subdir = f"src/main/resources/mapper/{module}"
+
+        else:
+            raise ValueError(f"未知的组件类型: {component}")
+
+        return f"{subdir}/{filename}"
 
 
 # ========== 便捷函数 ==========

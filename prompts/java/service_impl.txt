@@ -1,0 +1,46 @@
+基于以下信息，生成 Service 实现类。
+
+## 实体信息
+Java 类名: {class_name}
+完整包路径: {package_path}
+
+## 要求
+请生成简洁的 Service 实现类，包含以下内容：
+
+1. **类定义**：
+   - 继承 `ServiceImpl<{class_name}Mapper, {class_name}>`
+   - 实现 `{class_name}Service` 接口
+   - 添加 `@Service` 注解
+
+2. **包声明**：
+   - 包路径：`{package_path}.service.impl`
+
+3. **注释**：
+   - 添加简洁的 JavaDoc 注释说明实现类的作用
+
+## 输出格式
+请只输出 Java 代码，代码块使用 ```java 包裹。
+
+## 示例格式
+```java
+package {package_path}.service.impl;
+
+import {package_path}.mapper.{class_name}Mapper;
+import {package_path}.model.{class_name};
+import {package_path}.service.{class_name}Service;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import org.springframework.stereotype.Service;
+
+/**
+ * {table_comment} 服务实现类
+ *
+ * @author xhn
+ * @date {date}
+ */
+@Service
+public class {class_name}ServiceImpl extends ServiceImpl<{class_name}Mapper, {class_name}> implements {class_name}Service {{
+
+}}
+```
+
+请根据上述要求生成代码。
