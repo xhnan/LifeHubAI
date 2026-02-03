@@ -14,4 +14,4 @@ class HealthService(HealthServicer):
 
     def Ping(self, request, context):
         # 测试接口：返回 "hello world"
-        return health_pb2.PingResponse(message="hello world")
+        return health_pb2.PingResponse(message="hello world，哈哈哈")
