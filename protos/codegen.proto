@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package lifehub;
+
+// 代码生成 Agent 服务
+service CodeGeneration {
+  // 通过自然语言描述生成代码
+  rpc GenerateCode(GenerateRequest) returns (GenerateResponse) {}
+}
+
+// 代码生成请求
+message GenerateRequest {
+  string prompt = 1;  // 自然语言描述，例如："为 sys_user 表生成完整的 CRUD 代码"
+}
+
+// 代码生成响应
+message GenerateResponse {
+  bool success = 1;
+  string message = 2;           // 总结信息
+  string description = 3;       // Agent 对生成内容的描述
+
+  // 生成的文件信息
+  repeated FileInfo files = 4;
+
+  // 如果失败，错误信息
+  string error = 5;
+
+  // Agent 的执行过程（可选，用于调试）
+  repeated string steps = 6;
+}
+
+// 文件信息
+message FileInfo {
+  string path = 1;        // 文件路径
+  string type = 2;        // 文件类型 (entity, mapper, service, controller 等)
+  string description = 3; // 文件描述
+}

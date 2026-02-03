@@ -523,10 +523,19 @@ class CodeGenAgent(SimpleAgent):
         if output_dir is None:
             output_dir = self.output_dir
 
-        debug_file = os.path.join(output_dir, f"debug_{component}_output.txt")
+        # 创建 logs 目录
+        logs_dir = os.path.join(output_dir, "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+
+        # 使用时间戳创建唯一的调试文件名
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        debug_file = os.path.join(logs_dir, f"debug_{component}_{timestamp}.txt")
+
         try:
             with open(debug_file, 'w', encoding='utf-8') as f:
-                f.write(f"=== {component} LLM Output ===\n\n")
+                f.write(f"=== {component} LLM Output ===\n")
+                f.write(f"时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
                 f.write(content)
             print(f"💾 调试信息已保存: {debug_file}")
         except Exception as debug_err:
@@ -611,6 +620,9 @@ class CodeGenAgent(SimpleAgent):
         """
         生成 Entity 组件（包括 BaseEntity 和 Entity 两个类）
 
+        BaseEntity: 每次强制生成，不验证
+        Entity: 存在则跳过，不存在才生成并验证
+
         Args:
             context: 上下文信息
             overwrite_rules: 覆盖规则
@@ -622,6 +634,52 @@ class CodeGenAgent(SimpleAgent):
             是否成功（部分成功也返回 True）
         """
         try:
+            table_name = context.get('table_name', '')
+            base_file_path = self._get_file_path(table_name, 'base_entity', context)
+            entity_file_path = self._get_file_path(table_name, 'entity', context)
+            base_overwrite = overwrite_rules.get('base_entity', True)
+            entity_overwrite = overwrite_rules.get('entity', False)
+
+            # 0. 检查 Entity 文件是否需要生成（BaseEntity 总是生成）
+            entity_exists = self.file.file_exists(entity_file_path)
+            entity_should_skip = (
+                entity_exists.get('success', False) and
+                entity_exists.get('exists', False) and
+                not entity_overwrite
+            )
+
+            if entity_should_skip:
+                # Entity 文件存在且不覆盖，只生成 BaseEntity
+                print(f"⊘ 跳过已存在: {entity_file_path}")
+                skipped_files.append(entity_file_path)
+
+                # 单独生成 BaseEntity
+                prompt = self.prompt_loader.fill_template('entity', context)
+                response = self.client.chat.completions.create(
+                    model=os.getenv("LLM_MODEL", "deepseek-chat"),
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                generated_code = response.choices[0].message.content
+                code_blocks = self._extract_multiple_code_blocks(generated_code)
+
+                if len(code_blocks) < 2:
+                    errors_list.append(f"entity: LLM 未返回 2 个代码块")
+                    self._save_debug_info('entity', generated_code)
+                    return False
+
+                # 写入 BaseEntity（不验证）
+                base_result = self._write_component_file(
+                    base_file_path,
+                    code_blocks[0],
+                    True,  # BaseEntity 总是覆盖
+                    'base_entity',
+                    errors_list
+                )
+                if base_result['success'] and base_result['action'] == 'generated':
+                    generated_files.append(base_file_path)
+                return True
+
+            # 需要生成两个文件，调用 LLM
             # 1. 加载并填充 Prompt
             prompt = self.prompt_loader.fill_template('entity', context)
 
@@ -647,25 +705,52 @@ class CodeGenAgent(SimpleAgent):
                 self._save_debug_info('entity', generated_code)
                 return False
 
-            # 5. 写入 BaseEntity 文件
-            table_name = context.get('table_name', '')
-            base_file_path = self._get_file_path(table_name, 'base_entity', context)
-            base_overwrite = overwrite_rules.get('base_entity', True)
-
+            # 5. 写入 BaseEntity 文件（不验证）
             base_result = self._write_component_file(
                 base_file_path,
                 code_blocks[0],
-                base_overwrite,
+                True,  # BaseEntity 总是覆盖
                 'base_entity',
                 errors_list
             )
 
-            if base_result['success'] and base_result['action'] == 'generated':
-                generated_files.append(base_file_path)
+            if base_result['success']:
+                if base_result['action'] == 'generated':
+                    generated_files.append(base_file_path)
+                elif base_result['action'] == 'skipped':
+                    skipped_files.append(base_file_path)
 
-            # 6. 写入 Entity 文件
-            entity_file_path = self._get_file_path(table_name, 'entity', context)
-            entity_overwrite = overwrite_rules.get('entity', False)
+            # 6. 写入 Entity 文件（新文件才验证）
+            is_new_entity = not (entity_exists.get('success', False) and entity_exists.get('exists', False))
+
+            # 如果是新文件且启用了验证，先验证再写入
+            if is_new_entity and self.validator and self.enable_validation:
+                validation_result = self.validator.validate_all(
+                    code=code_blocks[1],
+                    component='entity',
+                    context=context,
+                    enable_llm=self.enable_llm_validation,
+                    enable_compile=self.enable_compile_check,
+                    enable_prompt=self.enable_prompt_check
+                )
+
+                if not validation_result['success']:
+                    validation_issues = []
+                    if validation_result.get('llm_check') and not validation_result['llm_check']['passed']:
+                        issues = validation_result['llm_check'].get('issues', [])
+                        validation_issues.extend([f"[LLM] {i}" for i in issues])
+                    if validation_result.get('compile_check') and not validation_result['compile_check']['passed']:
+                        errs = validation_result['compile_check'].get('errors', [])[:3]
+                        validation_issues.extend([f"[编译] {e}" for e in errs])
+                    if validation_result.get('prompt_check') and not validation_result['prompt_check']['passed']:
+                        missing = validation_result['prompt_check'].get('missing_items', [])
+                        validation_issues.extend([f"[符合度] {m}" for m in missing])
+
+                    if validation_issues:
+                        error_detail = f"entity: 验证未通过 - " + "; ".join(validation_issues[:3])
+                        errors_list.append(error_detail)
+                        print(f"⚠️ {error_detail}")
+                        self._save_debug_info(f"entity_validation_failed", code_blocks[1])
 
             entity_result = self._write_component_file(
                 entity_file_path,
@@ -675,10 +760,11 @@ class CodeGenAgent(SimpleAgent):
                 errors_list
             )
 
-            if entity_result['success'] and entity_result['action'] == 'generated':
-                generated_files.append(entity_file_path)
-            elif entity_result['action'] == 'skipped':
-                skipped_files.append(entity_file_path)
+            if entity_result['success']:
+                if entity_result['action'] == 'generated':
+                    generated_files.append(entity_file_path)
+                elif entity_result['action'] == 'skipped':
+                    skipped_files.append(entity_file_path)
 
             return True
 
@@ -763,7 +849,19 @@ class CodeGenAgent(SimpleAgent):
                         )
                         continue
 
-                    # 其他组件的正常处理流程
+                    # 0. 先检查文件是否存在，决定是否需要生成（优化：跳过不需要生成的组件）
+                    file_path = self._get_file_path(table_name, component, context)
+                    overwrite = overwrite_rules.get(component, False)
+
+                    # 检查文件是否已存在
+                    exists_result = self.file.file_exists(file_path)
+                    if exists_result.get('success', False) and exists_result.get('exists', False) and not overwrite:
+                        # 文件已存在且不覆盖，直接跳过（不调用 LLM，不验证）
+                        skipped_files.append(file_path)
+                        print(f"⊘ 跳过已存在: {file_path}")
+                        continue
+
+                    # 文件不存在或需要覆盖，开始生成流程
                     # 1. 加载并填充 Prompt
                     prompt = self.prompt_loader.fill_template(component, context)
 
@@ -795,8 +893,12 @@ class CodeGenAgent(SimpleAgent):
                         self._save_debug_info(component, original_code)
                         continue
 
-                    # 4. 代码验证（如果启用）
-                    if self.validator and self.enable_validation:
+                    # 4. 代码验证（仅对新文件启用，BaseEntity 不验证）
+                    # BaseEntity 在 entity 组件中单独处理，这里不验证
+                    # 只有新生成的非 BaseEntity 文件才验证
+                    is_new_file = not (exists_result.get('success', False) and exists_result.get('exists', False))
+
+                    if self.validator and self.enable_validation and is_new_file:
                         validation_result = self.validator.validate_all(
                             code=generated_code,
                             component=component,
@@ -834,10 +936,7 @@ class CodeGenAgent(SimpleAgent):
                                 # 可选：跳过写入验证失败的代码
                                 # continue
 
-                    # 5. 确定文件路径并写入
-                    file_path = self._get_file_path(table_name, component, context)
-                    overwrite = overwrite_rules.get(component, False)
-
+                    # 5. 写入文件
                     # 使用统一的文件写入方法
                     write_result = self._write_component_file(
                         file_path=file_path,
