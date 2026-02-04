@@ -36,10 +36,12 @@ class CodeGenerationService(CodeGenerationServicer):
         Returns:
             GenerateResponse
         """
+        print("收到代码生成请求：", request.prompt)
         try:
             prompt = request.prompt
 
             if not prompt:
+                print("请求参数 prompt 为空")
                 return codegen_pb2.GenerateResponse(
                     success=False,
                     message="请求参数不能为空",
@@ -50,6 +52,7 @@ class CodeGenerationService(CodeGenerationServicer):
             if self.agent is None:
                 self._init_agent()
                 if self.agent is None:
+                    print("Agent 初始化失败，无法处理请求")
                     return codegen_pb2.GenerateResponse(
                         success=False,
                         message="Agent 初始化失败",
@@ -60,7 +63,7 @@ class CodeGenerationService(CodeGenerationServicer):
             result = self.agent.run(
                 user_message=prompt,
                 max_iterations=20,
-                verbose=False  # gRPC 环境不打印详细日志
+                verbose=True  # gRPC 环境不打印详细日志
             )
 
             # 解析结果

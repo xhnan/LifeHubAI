@@ -236,7 +236,7 @@ class CodeGenAgent(SimpleAgent):
         output_dir: str = None,
         package_prefix: str = None,
         enable_validation: bool = None,
-        enable_llm_validation: bool = True,
+        enable_llm_validation: bool = False,
         enable_compile_check: bool = True,
         enable_prompt_check: bool = True
     ):
@@ -261,8 +261,8 @@ class CodeGenAgent(SimpleAgent):
         # 验证开关配置（从环境变量或参数读取）
         self.enable_validation = enable_validation if enable_validation is not None else \
                                  os.getenv("CODE_ENABLE_VALIDATION", "true").lower() == "true"
-        self.enable_llm_validation = enable_llm_validation and \
-                                    os.getenv("CODE_ENABLE_LLM_VALIDATION", "true").lower() == "true"
+        self.enable_llm_validation = enable_llm_validation or \
+                                    (os.getenv("CODE_ENABLE_LLM_VALIDATION", "false").lower() == "true")
         self.enable_compile_check = enable_compile_check and \
                                     os.getenv("CODE_ENABLE_COMPILE_CHECK", "true").lower() == "true"
         self.enable_prompt_check = enable_prompt_check and \
