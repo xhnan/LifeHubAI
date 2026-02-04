@@ -161,6 +161,8 @@ class PromptLoader:
 
         # 生成包路径
         suffix = table_name.replace(f"{module_name}_", "") if module_name else table_name
+        # 去掉 suffix 中的所有下划线，例如 user_role → userrole
+        suffix = suffix.replace("_", "")
         package_path = f"{package_prefix}.{module_name}.{suffix}"
 
         # 生成表路径（用于 URL 路径，去掉所有下划线）
