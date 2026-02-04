@@ -37,6 +37,9 @@ Java 类名: {class_name}
    - 将数据库下划线命名转为驼峰：user_name → userName
    - 类型参考基础 Prompt 中的映射规则
 
+5. **其他要求**：
+   - 自增类型的主键使用 Long 类型
+
 ### 2. {class_name} 类（继承类）
 生成一个空类，继承 Base{class_name}，用于后续扩展业务逻辑。
 

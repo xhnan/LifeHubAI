@@ -35,6 +35,7 @@
 - 逻辑删除字段添加 `@TableLogic`
 - 创建时间和更新时间自动填充使用 `@TableField(fill = FieldFill.INSERT) / INSERT_UPDATE`
 - 统一使用 `ResponseResult<T>` 作为返回值类型
+- 不需要对注释中的时间进行校验
 
 ## SpringDoc 注解说明
 - **实体类字段**：使用 `@Schema(description = "说明")` 注解
