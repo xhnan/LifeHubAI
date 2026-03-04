@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-
 class Config:
     """配置管理类"""
 
