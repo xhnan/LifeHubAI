@@ -1,11 +1,27 @@
 """
 LifeHubAI FastAPI 主应用
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from routers import codegen_router, tts_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理：启动和关闭时的回调"""
+    # 启动时 - 无需额外操作，服务注册在 config 初始化时完成
+    yield
+    # 关闭时 - 从 Nacos 注销服务
+    try:
+        from config import get_config
+        config = get_config()
+        config.deregister_service()
+    except Exception:
+        pass
+
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -13,7 +29,8 @@ app = FastAPI(
     description="AI 驱动的代码生成和文本转语音服务",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # 配置 CORS

@@ -1,0 +1,37 @@
+# ============================================
+# LifeHubAI Docker Compose
+# ============================================
+
+services:
+  lifehubai:
+    build:
+      context: ./code
+      dockerfile: Dockerfile
+    container_name: lifehubai
+    restart: unless-stopped
+    ports:
+      - "8000:8000"   # FastAPI HTTP
+      - "50051:50051"  # gRPC
+    env_file:
+      - .env.production
+    environment:
+      - ENVIRONMENT=production
+      - NACOS_ENABLED=true
+    volumes:
+      # 代码生成输出目录
+      - ./output:/app/output
+      # 日志目录
+      - ./logs:/app/logs
+    networks:
+      - nacos_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+networks:
+  nacos_net:
+    external: true
+    name: nacos_default  # 强制指向你 Java 正在使用的那个 Nacos 网络

@@ -1,0 +1,109 @@
+# ============================================
+# LifeHubAI - GitHub Actions Self-Hosted 部署
+# ============================================
+# 前置条件：
+#   1. 云服务器上已安装并注册 self-hosted runner
+#   2. 服务器上已创建 /usr/local/lifehub/python/.env.production
+#   3. 服务器上已创建 nacos_default 外部网络
+#   4. runner 用户有 docker 权限（加入 docker 组）
+
+name: Deploy LifeHubAI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # 支持手动触发
+
+env:
+  DEPLOY_DIR: /usr/local/lifehub/python
+  APP_NAME: lifehubai
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # 使用自托管 runner
+    steps:
+      # 1. 拉取代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 准备部署目录
+      - name: Prepare deploy directory
+        run: |
+          mkdir -p ${{ env.DEPLOY_DIR }}/{logs,output,code}
+
+          # 同步代码到 code/ 目录
+          rsync -av --delete \
+            --exclude='.git' \
+            --exclude='__pycache__' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='!.env.production.example' \
+            --exclude='logs/' \
+            --exclude='output/' \
+            ${{ github.workspace }}/ ${{ env.DEPLOY_DIR }}/code/
+
+          # 把 docker-compose.yml 复制到部署根目录
+          cp ${{ env.DEPLOY_DIR }}/code/docker-compose.yml ${{ env.DEPLOY_DIR }}/docker-compose.yml
+
+      # 3. 检查 .env.production 是否存在
+      - name: Check env file
+        run: |
+          if [ ! -f "${{ env.DEPLOY_DIR }}/.env.production" ]; then
+            echo "❌ 缺少 .env.production 文件！"
+            echo "   请在服务器上手动创建: ${{ env.DEPLOY_DIR }}/.env.production"
+            echo "   参考模板: ${{ env.DEPLOY_DIR }}/code/.env.production.example"
+            exit 1
+          fi
+          echo "✓ .env.production 已就绪"
+
+      # 4. 构建并部署
+      - name: Build and deploy
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          echo "🔨 构建镜像..."
+          docker compose build --no-cache
+
+          echo "🚀 重启服务..."
+          docker compose down
+          docker compose up -d
+
+          echo "🧹 清理旧镜像..."
+          docker image prune -f
+
+      # 5. 健康检查
+      - name: Health check
+        run: |
+          echo "⏳ 等待服务启动..."
+          sleep 15
+
+          MAX_RETRIES=6
+          RETRY_INTERVAL=5
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ HTTP 服务健康！"
+              break
+            fi
+            echo "⏳ 第 $i/$MAX_RETRIES 次检查，状态码: $HTTP_CODE，${RETRY_INTERVAL}s 后重试..."
+            sleep $RETRY_INTERVAL
+          done
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ HTTP 健康检查失败！"
+            docker compose -f ${{ env.DEPLOY_DIR }}/docker-compose.yml logs --tail=50
+            exit 1
+          fi
+
+      # 6. 部署完成
+      - name: Deploy summary
+        if: success()
+        run: |
+          echo "============================================"
+          echo "✅ LifeHubAI 部署成功！"
+          echo "   HTTP:  http://$(hostname -I | awk '{print $1}'):8000"
+          echo "   gRPC:  $(hostname -I | awk '{print $1}'):50051"
+          echo "   Docs:  http://$(hostname -I | awk '{print $1}'):8000/docs"
+          echo "   提交:  ${{ github.sha }}"
+          echo "   时间:  $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "============================================"

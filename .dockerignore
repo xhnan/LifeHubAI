@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+dist
+build
+*.egg
+
+# 虚拟环境
+.venv
+venv
+env
+.conda
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# 环境配置（不要把密钥打进镜像，用 env_file 挂载）
+.env
+.env.*
+!.env.production.example
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 文档 & 杂项
+*.md
+LICENSE
+logs/
+output/

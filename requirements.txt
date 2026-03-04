@@ -29,3 +29,6 @@ protobuf>=4.25.0
 
 openai~=2.16.0
 requests~=2.32.3
+
+# Nacos (可选，生产环境使用)
+nacos-sdk-python>=0.1.13
