@@ -31,7 +31,7 @@ jobs:
         run: |
           mkdir -p ${{ env.DEPLOY_DIR }}/{logs,output,code}
 
-          # 同步代码到 code/ 目录
+          # 同步代码到 code/ 目录（docker-compose.yml 由手动管理，不覆盖）
           rsync -av --delete \
             --exclude='.git' \
             --exclude='__pycache__' \
@@ -40,10 +40,8 @@ jobs:
             --exclude='!.env.production.example' \
             --exclude='logs/' \
             --exclude='output/' \
+            --exclude='docker-compose.yml' \
             ${{ github.workspace }}/ ${{ env.DEPLOY_DIR }}/code/
-
-          # 把 docker-compose.yml 复制到部署根目录
-          cp ${{ env.DEPLOY_DIR }}/code/docker-compose.yml ${{ env.DEPLOY_DIR }}/docker-compose.yml
 
       # 3. 检查 .env.production 是否存在
       - name: Check env file
