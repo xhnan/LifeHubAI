@@ -126,18 +126,38 @@ class HealthAgentService:
             return False
 
     def get_status(self) -> dict:
-        """获取服务状态"""
+        """获取服务状态，实际验证关键配置"""
+        import os
+
         with self._lock:
             session_count = len(self._sessions)
 
-        model = "unknown"
-        import os
+        # 验证 API Key
+        api_key = os.getenv("HEALTH_LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or os.getenv("API_KEY")
+        api_key_ok = bool(api_key)
+
+        # 验证 Prompt 文件
+        prompt_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "Agent", "prompts", "health_system.txt"
+        )
+        prompt_ok = os.path.isfile(prompt_path)
+
+        # 验证模型配置
         model = os.getenv("HEALTH_LLM_MODEL") or os.getenv("LLM_MODEL", "deepseek-chat")
+        model_ok = bool(model)
+
+        all_ok = api_key_ok and prompt_ok and model_ok
 
         return {
-            "status": "healthy",
+            "status": "healthy" if all_ok else "degraded",
             "model": model,
-            "session_count": session_count
+            "session_count": session_count,
+            "checks": {
+                "api_key": "ok" if api_key_ok else "missing",
+                "prompt_file": "ok" if prompt_ok else f"not found: {prompt_path}",
+                "model": "ok" if model_ok else "not configured"
+            }
         }
 
     def get_session_ids(self) -> list[str]:

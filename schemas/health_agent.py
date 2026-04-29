@@ -2,7 +2,7 @@
 健康 Agent 相关数据模型
 """
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict
 
 
 class HealthChatRequest(BaseModel):
@@ -24,9 +24,10 @@ class HealthResetRequest(BaseModel):
 
 class HealthStatusResponse(BaseModel):
     """健康 Agent 服务状态"""
-    status: str = Field(..., description="服务状态")
+    status: str = Field(..., description="服务状态: healthy 或 degraded")
     model: str = Field(..., description="当前使用的模型")
     session_count: int = Field(..., description="活跃会话数")
+    checks: Optional[Dict[str, str]] = Field(None, description="各项检查结果")
 
 
 class HealthErrorResponse(BaseModel):

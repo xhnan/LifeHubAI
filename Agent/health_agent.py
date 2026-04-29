@@ -3,6 +3,7 @@
 继承 SimpleAgent，提供健康问答能力，支持流式输出
 """
 import os
+import threading
 from typing import Generator
 from .code_agent import SimpleAgent
 
@@ -25,6 +26,9 @@ class HealthAgent(SimpleAgent):
 
         # 初始化对话历史（带系统提示）
         self.messages = [{"role": "system", "content": self.system_prompt}]
+
+        # 会话级锁，防止并发请求污染消息历史
+        self._chat_lock = threading.Lock()
 
         print(f"  ✓ 健康 Agent 模型: {self.model}")
 
@@ -52,22 +56,23 @@ class HealthAgent(SimpleAgent):
         Returns:
             完整的回答文本
         """
-        self.messages.append({"role": "user", "content": user_message})
+        with self._chat_lock:
+            self.messages.append({"role": "user", "content": user_message})
 
-        try:
-            response = self._call_llm(use_tools=False)
-            assistant_message = response.choices[0].message
+            try:
+                response = self._call_llm(use_tools=False)
+                assistant_message = response.choices[0].message
 
-            self.messages.append({
-                "role": "assistant",
-                "content": assistant_message.content
-            })
+                self.messages.append({
+                    "role": "assistant",
+                    "content": assistant_message.content
+                })
 
-            return assistant_message.content
-        except Exception:
-            # LLM 调用失败，移除已添加的用户消息，保持历史一致性
-            self.messages.pop()
-            raise
+                return assistant_message.content
+            except Exception:
+                # LLM 调用失败，移除已添加的用户消息，保持历史一致性
+                self.messages.pop()
+                raise
 
     def chat_stream(self, user_message: str) -> Generator[str, None, None]:
         """
@@ -79,29 +84,30 @@ class HealthAgent(SimpleAgent):
         Yields:
             每次生成的文本片段
         """
-        self.messages.append({"role": "user", "content": user_message})
+        with self._chat_lock:
+            self.messages.append({"role": "user", "content": user_message})
 
-        stream = self.client.chat.completions.create(
-            model=self.model,
-            messages=self.messages,
-            stream=True
-        )
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=self.messages,
+                stream=True
+            )
 
-        full_response = ""
-        try:
-            for chunk in stream:
-                if chunk.choices[0].delta.content is not None:
-                    token = chunk.choices[0].delta.content
-                    full_response += token
-                    yield token
-        finally:
-            stream.close()
-            # 将完整回复加入历史（即使出错也记录已生成的部分）
-            if full_response:
-                self.messages.append({
-                    "role": "assistant",
-                    "content": full_response
-                })
+            full_response = ""
+            try:
+                for chunk in stream:
+                    if chunk.choices[0].delta.content is not None:
+                        token = chunk.choices[0].delta.content
+                        full_response += token
+                        yield token
+            finally:
+                stream.close()
+                # 将完整回复加入历史（即使出错也记录已生成的部分）
+                if full_response:
+                    self.messages.append({
+                        "role": "assistant",
+                        "content": full_response
+                    })
 
     def reset(self):
         """重置对话历史（保留系统提示）"""
