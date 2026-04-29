@@ -3,6 +3,7 @@
 提供健康咨询 REST API，支持 SSE 流式输出
 """
 import json
+import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -11,9 +12,10 @@ from schemas.health_agent import (
     HealthChatResponse,
     HealthResetRequest,
     HealthStatusResponse,
-    HealthErrorResponse
 )
 from services.health_agent_service import get_health_agent_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/health", tags=["健康 Agent"])
 
@@ -29,10 +31,14 @@ async def chat_stream(request: HealthChatRequest):
 
     def event_generator():
         try:
-            for chunk in service.chat_stream(request.message, request.session_id):
-                yield f"data: {json.dumps({'token': chunk}, ensure_ascii=False)}\n\n"
+            for event in service.chat_stream(request.message, request.session_id):
+                if event["type"] == "session":
+                    yield f"data: {json.dumps({'session_id': event['session_id']}, ensure_ascii=False)}\n\n"
+                elif event["type"] == "token":
+                    yield f"data: {json.dumps({'token': event['token']}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
+            logger.error(f"流式对话错误: {e}")
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -59,6 +65,7 @@ async def chat_sync(request: HealthChatRequest):
         result = service.chat(request.message, request.session_id)
         return HealthChatResponse(**result)
     except Exception as e:
+        logger.error(f"同步对话错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -88,4 +95,5 @@ async def health_check():
         service = get_health_agent_service()
         return HealthStatusResponse(**service.get_status())
     except Exception as e:
+        logger.error(f"健康检查错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
