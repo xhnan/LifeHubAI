@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routers import codegen_router, tts_router
+from routers import codegen_router, tts_router, health_router
 
 
 @asynccontextmanager
@@ -45,6 +45,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(codegen_router)
 app.include_router(tts_router)
+app.include_router(health_router)
 
 
 @app.get("/", summary="根路径")
@@ -57,7 +58,8 @@ async def root():
         "endpoints": {
             "docs": "/docs",
             "codegen": "/api/codegen",
-            "tts": "/api/tts"
+            "tts": "/api/tts",
+            "health_agent": "/api/health"
         }
     }
 
@@ -72,7 +74,8 @@ async def health_check():
         },
         "services": {
             "code_generation": "/api/codegen/health",
-            "text_to_speech": "/api/tts/health"
+            "text_to_speech": "/api/tts/health",
+            "health_agent": "/api/health/health"
         }
     }
 
