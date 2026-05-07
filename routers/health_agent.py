@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/health", tags=["健康 Agent"])
     summary="健康咨询（SSE 流式）",
     description="发送健康问题，以 SSE 流式方式返回 AI 回答"
 )
-async def chat_stream(request: HealthChatRequest):
+def chat_stream(request: HealthChatRequest):
     """SSE 流式健康咨询"""
     service = get_health_agent_service()
 

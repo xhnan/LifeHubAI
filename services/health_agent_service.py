@@ -7,13 +7,14 @@ import time
 import threading
 import logging
 from typing import Dict, Generator, Optional
-from Agent.health_agent import HealthAgent
+from agent.health_agent import HealthAgent
 
 logger = logging.getLogger(__name__)
 
 # 会话配置
 MAX_SESSIONS = 100
 SESSION_TTL_SECONDS = 3600  # 1 hour
+_CLEANUP_INTERVAL_SECONDS = 300  # 5 分钟
 
 
 class HealthAgentService:
@@ -22,7 +23,22 @@ class HealthAgentService:
     def __init__(self):
         self._sessions: Dict[str, dict] = {}  # {session_id: {"agent": HealthAgent, "last_access": timestamp}}
         self._lock = threading.Lock()
+        self._start_cleanup_thread()
         logger.info("健康 Agent 服务初始化完成")
+
+    def _start_cleanup_thread(self):
+        """启动后台过期会话清理线程"""
+        def _cleanup_loop():
+            while True:
+                time.sleep(_CLEANUP_INTERVAL_SECONDS)
+                try:
+                    with self._lock:
+                        self._evict_expired_sessions()
+                except Exception as e:
+                    logger.error(f"会话清理异常: {e}")
+
+        t = threading.Thread(target=_cleanup_loop, daemon=True, name="session-cleanup")
+        t.start()
 
     def _get_or_create_agent(self, session_id: Optional[str] = None) -> tuple[str, HealthAgent]:
         """
@@ -128,23 +144,23 @@ class HealthAgentService:
     def get_status(self) -> dict:
         """获取服务状态，实际验证关键配置"""
         import os
+        from agent.config import get_health_api_key, get_health_model
 
         with self._lock:
             session_count = len(self._sessions)
 
         # 验证 API Key
-        api_key = os.getenv("HEALTH_LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or os.getenv("API_KEY")
-        api_key_ok = bool(api_key)
+        api_key_ok = bool(get_health_api_key())
 
         # 验证 Prompt 文件
         prompt_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "Agent", "prompts", "health_system.txt"
+            "agent", "prompts", "health_system.txt"
         )
         prompt_ok = os.path.isfile(prompt_path)
 
         # 验证模型配置
-        model = os.getenv("HEALTH_LLM_MODEL") or os.getenv("LLM_MODEL", "deepseek-chat")
+        model = get_health_model()
         model_ok = bool(model)
 
         all_ok = api_key_ok and prompt_ok and model_ok
@@ -174,8 +190,7 @@ _service_lock = threading.Lock()
 def get_health_agent_service() -> HealthAgentService:
     """获取健康 Agent 服务实例（线程安全单例）"""
     global _health_agent_service
-    if _health_agent_service is None:
-        with _service_lock:
-            if _health_agent_service is None:
-                _health_agent_service = HealthAgentService()
+    with _service_lock:
+        if _health_agent_service is None:
+            _health_agent_service = HealthAgentService()
     return _health_agent_service

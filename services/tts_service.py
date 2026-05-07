@@ -2,10 +2,9 @@
 文本转语音服务
 """
 import os
-from dotenv import load_dotenv
+import logging
 
-# 加载环境变量
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class TTSService:

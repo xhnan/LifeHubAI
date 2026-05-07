@@ -28,9 +28,3 @@ class HealthStatusResponse(BaseModel):
     model: str = Field(..., description="当前使用的模型")
     session_count: int = Field(..., description="活跃会话数")
     checks: Optional[Dict[str, str]] = Field(None, description="各项检查结果")
-
-
-class HealthErrorResponse(BaseModel):
-    """错误响应"""
-    error: str = Field(..., description="错误信息")
-    detail: Optional[str] = Field(None, description="错误详情")

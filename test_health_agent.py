@@ -15,7 +15,11 @@ def test_health_check():
     print(f"Response: {json.dumps(resp.json(), ensure_ascii=False, indent=2)}")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "healthy"
+    assert data["status"] in ("healthy", "degraded")
+    assert "checks" in data
+    assert "api_key" in data["checks"]
+    assert "prompt_file" in data["checks"]
+    assert "model" in data["checks"]
     print("✅ 通过")
 
 

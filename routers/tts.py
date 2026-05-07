@@ -1,23 +1,26 @@
 """
 文本转语音路由
 """
-from fastapi import APIRouter, HTTPException
+from functools import lru_cache
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import Response
-from pydantic import BaseModel
 
 from schemas.tts import TTSRequest, TTSResponse, HealthResponse
 from services.tts_service import TTSService
 
 router = APIRouter(prefix="/api/tts", tags=["文本转语音"])
 
-tts_service = TTSService()
+
+@lru_cache()
+def get_tts_service() -> TTSService:
+    return TTSService()
 
 
 @router.get("/health", response_model=HealthResponse, summary="TTS服务健康检查")
-async def health_check():
+async def health_check(service: TTSService = Depends(get_tts_service)):
     """检查 TTS 服务健康状态"""
     try:
-        api_configured = tts_service.check_api_key()
+        api_configured = service.check_api_key()
         return HealthResponse(
             status="healthy" if api_configured else "unhealthy",
             api_configured=api_configured
@@ -27,7 +30,7 @@ async def health_check():
 
 
 @router.post("/speak", response_model=TTSResponse, summary="生成语音（JSON返回）")
-async def generate_speech(request: TTSRequest):
+async def generate_speech(request: TTSRequest, service: TTSService = Depends(get_tts_service)):
     """
     生成语音并返回 JSON 格式的响应
 
@@ -37,7 +40,7 @@ async def generate_speech(request: TTSRequest):
     - volume: 音量（0.1-1.0）
     """
     try:
-        result = tts_service.generate_speech(
+        result = service.generate_speech(
             text=request.text,
             voice=request.voice,
             speed=request.speed,
@@ -49,7 +52,7 @@ async def generate_speech(request: TTSRequest):
 
 
 @router.post("/generate", summary="生成语音（文件下载）")
-async def generate_speech_file(request: TTSRequest):
+async def generate_speech_file(request: TTSRequest, service: TTSService = Depends(get_tts_service)):
     """
     生成语音并直接返回音频文件
 
@@ -59,7 +62,7 @@ async def generate_speech_file(request: TTSRequest):
     - volume: 音量（0.1-1.0）
     """
     try:
-        audio_data = tts_service.generate_speech_bytes(
+        audio_data = service.generate_speech_bytes(
             text=request.text,
             voice=request.voice,
             speed=request.speed,
@@ -78,5 +81,4 @@ async def generate_speech_file(request: TTSRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# 导出路由
 tts_router = router

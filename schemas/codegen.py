@@ -15,8 +15,8 @@ class DatabaseInfoResponse(BaseModel):
     host: str
     port: int
     database: str
-    user: str
     connected: bool
+    version: str = ""
 
 
 class TableListResponse(BaseModel):

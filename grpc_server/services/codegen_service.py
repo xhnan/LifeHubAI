@@ -5,7 +5,7 @@ import grpc
 from typing import List
 from generated import codegen_pb2
 from generated.codegen_pb2_grpc import CodeGenerationServicer
-from Agent.code_agent import CodeGenAgent
+from agent.code_agent import CodeGenAgent
 
 
 class CodeGenerationService(CodeGenerationServicer):
