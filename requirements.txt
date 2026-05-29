@@ -1,17 +1,23 @@
-# FastAPI
-fastapi>=0.115.2,<1.0
-starlette>=0.40.0,<1.0
-uvicorn[standard]==0.32.0
-pydantic==2.9.2
-
-# Database
-psycopg2-binary==2.9.9
 
 # AI/LLM
 openai>=2.0.0
+langchain
+langchain-openai
+deepagents
+tavily-python
+langchain-deepseek
+langchain-mcp-adapters
 
 # TTS
 zhipuai>=2.1.0
+
+# Web Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Database
+psycopg2-binary>=2.9.9
 
 # Utilities
 python-dotenv==1.0.1
@@ -29,4 +35,4 @@ requests>=2.32.0
 nacos-sdk-python>=0.1.13
 
 # YAML
-pyyaml>=6.0
+pyyaml>=6.0.1
