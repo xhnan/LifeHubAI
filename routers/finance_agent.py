@@ -1,41 +1,41 @@
 """
-健康 Agent 路由
-提供健康咨询 REST API，支持 SSE 流式输出
+财务 Agent 路由
+提供财务咨询 REST API，支持 SSE 流式输出
 
 提供两套 SSE 协议：
 - 公开协议（/chat） — type: session/token （供 uni-app 等直连使用）
-- Java 兼容协议（/agent/stream） — event: start/node/final/error （供 LifeHubServer 调用）
+- Java 兼容协议（/agent/stream） — event: start/final/error （供 LifeHubServer 调用）
 """
 import json
 import logging
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from schemas.health_agent import (
-    HealthChatRequest,
-    HealthChatResponse,
-    HealthResetRequest,
-    HealthStatusResponse,
+from schemas.finance_agent import (
+    FinanceChatRequest,
+    FinanceChatResponse,
+    FinanceResetRequest,
+    FinanceStatusResponse,
 )
-from services.health_agent_service import get_health_agent_service
+from services.finance_agent_service import get_finance_agent_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/health", tags=["健康 Agent"])
+router = APIRouter(prefix="/api/finance", tags=["财务 Agent"])
 
 
-# ============== 业务侧 SSE（保持原有协议） ==============
+# ============== 业务侧 SSE ==============
 
 @router.post(
     "/chat",
-    summary="健康咨询（SSE 流式 - 业务协议）",
-    description="发送健康问题，以 SSE 流式方式返回 AI 回答（type: session / token）"
+    summary="财务咨询（SSE 流式 - 业务协议）",
+    description="发送理财问题，以 SSE 流式方式返回 AI 回答（type: session / token）"
 )
-def chat_stream(request: HealthChatRequest):
-    """SSE 流式健康咨询（业务侧协议）"""
-    service = get_health_agent_service()
+def chat_stream(request: FinanceChatRequest):
+    """SSE 流式财务咨询（业务侧协议）"""
+    service = get_finance_agent_service()
 
     def event_generator():
         try:
@@ -46,7 +46,7 @@ def chat_stream(request: HealthChatRequest):
                     yield f"data: {json.dumps({'token': event['token']}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
-            logger.error(f"流式对话错误: {e}")
+            logger.error(f"财务流式对话错误: {e}")
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -60,49 +60,39 @@ def chat_stream(request: HealthChatRequest):
     )
 
 
-# ============== Java 兼容侧 SSE（新增） ==============
+# ============== Java 兼容协议 ==============
 
-class JavaAgentRequest(BaseModel):
-    """LifeHubServer 调用的 Agent 请求"""
+class JavaFinanceAgentRequest(BaseModel):
+    """LifeHubServer 调用的财务 Agent 请求"""
     message: str = Field(..., description="用户消息")
     user_id: Optional[str] = Field(None, description="用户 ID（可选，由 Java 端 JWT 派生）")
     session_id: Optional[str] = Field(None, description="会话 ID（可选）")
 
 
 def _format_sse_event(event_name: str, data: dict) -> str:
-    """格式化为带 event 字段的 SSE 块"""
     return f"event: {event_name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 @router.post(
     "/agent/stream",
-    summary="健康 Agent 流式调用（Java 兼容协议）",
+    summary="财务 Agent 流式调用（Java 兼容协议）",
     description="供 LifeHubServer 后端调用，发出 start/final/error 命名事件"
 )
-def java_agent_stream(request: JavaAgentRequest):
+def java_agent_stream(request: JavaFinanceAgentRequest):
     """
     Java 兼容协议 SSE 流。
-    协议格式：
-        event: start
-        data: {"user_id": "...", "message": "..."}
-
-        event: final
-        data: {"state": {"final_response": "..."}, "summary": {...}, "record_payload": {...}}
-
-        event: error
-        data: {"message": "...", "detail": "..."}
+    与 health agent 的 /api/health/agent/stream 协议完全相同，
+    但路由到 finance agent 实例。
     """
-    service = get_health_agent_service()
+    service = get_finance_agent_service()
 
     def event_generator():
         try:
-            # 发送 start 事件
             yield _format_sse_event("start", {
                 "user_id": request.user_id or "anonymous",
                 "message": request.message,
             })
 
-            # 收集完整响应
             full_response = ""
             session_id = None
             for event in service.chat_stream(request.message, request.session_id):
@@ -110,23 +100,20 @@ def java_agent_stream(request: JavaAgentRequest):
                     session_id = event["session_id"]
                 elif event["type"] == "token":
                     full_response += event["token"]
-                    # 同时透传 token 作为 node 事件，让 Java 端可选展示进度
-                    # (Java 端的 node handler 会跳过非已知节点)
 
-            # 发送 final 事件（Java 端从 state.final_response 提取文本）
             yield _format_sse_event("final", {
                 "state": {
                     "final_response": full_response,
                     "session_id": session_id,
                 },
                 "summary": {
-                    "agent_type": "health",
+                    "agent_type": "finance",
                     "session_id": session_id,
                 },
                 "record_payload": {},
             })
         except Exception as e:
-            logger.error(f"Java 兼容 Agent 流错误: {e}", exc_info=True)
+            logger.error(f"Java 兼容财务 Agent 流错误: {e}", exc_info=True)
             yield _format_sse_event("error", {
                 "message": str(e),
                 "detail": type(e).__name__,
@@ -143,20 +130,20 @@ def java_agent_stream(request: JavaAgentRequest):
     )
 
 
-# ============== 同步与管理端点（保持不变） ==============
+# ============== 同步与管理端点 ==============
 
 @router.post(
     "/chat/sync",
-    response_model=HealthChatResponse,
-    summary="健康咨询（同步）",
-    description="发送健康问题，同步返回完整 AI 回答"
+    response_model=FinanceChatResponse,
+    summary="财务咨询（同步）",
+    description="发送理财问题，同步返回完整 AI 回答"
 )
-async def chat_sync(request: HealthChatRequest):
-    """同步健康咨询"""
+async def chat_sync(request: FinanceChatRequest):
+    """同步财务咨询"""
     try:
-        service = get_health_agent_service()
+        service = get_finance_agent_service()
         result = service.chat(request.message, request.session_id)
-        return HealthChatResponse(**result)
+        return FinanceChatResponse(**result)
     except Exception as e:
         logger.error(f"同步对话错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -167,9 +154,9 @@ async def chat_sync(request: HealthChatRequest):
     summary="重置会话",
     description="重置指定会话的对话历史"
 )
-async def reset_session(request: HealthResetRequest):
+async def reset_session(request: FinanceResetRequest):
     """重置会话"""
-    service = get_health_agent_service()
+    service = get_finance_agent_service()
     success = service.reset(request.session_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"会话不存在: {request.session_id}")
@@ -178,15 +165,14 @@ async def reset_session(request: HealthResetRequest):
 
 @router.get(
     "/health",
-    response_model=HealthStatusResponse,
-    summary="Agent 服务健康检查",
-    description="检查健康 Agent 服务状态"
+    response_model=FinanceStatusResponse,
+    summary="财务 Agent 服务健康检查",
 )
 async def health_check():
-    """Agent 服务健康检查"""
+    """财务 Agent 服务健康检查"""
     try:
-        service = get_health_agent_service()
-        return HealthStatusResponse(**service.get_status())
+        service = get_finance_agent_service()
+        return FinanceStatusResponse(**service.get_status())
     except Exception as e:
         logger.error(f"健康检查错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))

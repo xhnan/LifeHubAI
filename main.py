@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 # 统一加载环境变量（仅在入口加载一次）
 load_dotenv()
 
-from routers import codegen_router, tts_router, health_router
+from routers import codegen_router, tts_router, health_router, finance_router
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,7 @@ app.add_middleware(
 app.include_router(codegen_router)
 app.include_router(tts_router)
 app.include_router(health_router)
+app.include_router(finance_router)
 
 
 @app.get("/", summary="根路径")
@@ -72,7 +73,8 @@ async def root():
             "docs": "/docs",
             "codegen": "/api/codegen",
             "tts": "/api/tts",
-            "health_agent": "/api/health"
+            "health_agent": "/api/health",
+            "finance_agent": "/api/finance"
         }
     }
 
@@ -88,7 +90,8 @@ async def health_check():
         "services": {
             "code_generation": "/api/codegen/health",
             "text_to_speech": "/api/tts/health",
-            "health_agent": "/api/health/health"
+            "health_agent": "/api/health/health",
+            "finance_agent": "/api/finance/health"
         }
     }
 
