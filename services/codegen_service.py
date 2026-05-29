@@ -2,12 +2,11 @@
 代码生成服务
 """
 import os
+import logging
 import psycopg2
-from dotenv import load_dotenv
 import yaml
 
-# 加载环境变量
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class CodegenService:
@@ -59,7 +58,6 @@ class CodegenService:
                 "host": self.db_config["host"],
                 "port": int(self.db_config["port"]),
                 "database": self.db_config["database"],
-                "user": self.db_config["user"],
                 "connected": True,
                 "version": version
             }
@@ -68,9 +66,8 @@ class CodegenService:
                 "host": self.db_config.get("host", ""),
                 "port": int(self.db_config.get("port", 0)),
                 "database": self.db_config.get("database", ""),
-                "user": self.db_config.get("user", ""),
                 "connected": False,
-                "error": str(e)
+                "version": ""
             }
 
     def list_tables(self, prefix: str = "") -> list[str]:

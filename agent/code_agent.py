@@ -5,16 +5,15 @@
 import os
 import re
 import json
+import logging
 import traceback
 from typing import List, Dict, Any, Callable
-from dotenv import load_dotenv
 from openai import OpenAI
 from .tools.database_tool import get_db_tool
 from .tools.file_tool import get_file_tool
 from .prompt_loader import PromptLoader
 
-# 加载环境变量
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class SimpleAgent:
@@ -39,9 +38,7 @@ class SimpleAgent:
         self.tools: Dict[str, dict] = {}
         self.messages: List[Dict] = []
 
-        print(f"✓ Agent 初始化完成")
-        print(f"  ✓ API Key: {api_key[:10]}...{api_key[-4:]}")
-        print(f"  ✓ Base URL: {base_url}")
+        logger.info("Agent 初始化完成")
 
     def register_tool(self, name: str, func: Callable, description: str, parameters: Dict):
         """注册一个工具"""
@@ -56,7 +53,7 @@ class SimpleAgent:
                 }
             }
         }
-        print(f"  ✓ 注册工具: {name}")
+        logger.info(f"注册工具: {name}")
 
     def get_tools_schema(self) -> List[Dict]:
         """获取所有工具的 Schema"""
@@ -76,8 +73,7 @@ class SimpleAgent:
         arguments = json.loads(tool_call.function.arguments)
 
         if verbose:
-            print(f"     → 调用: {function_name}")
-            print(f"     → 参数: {json.dumps(arguments, ensure_ascii=False)}")
+            logger.debug(f"调用: {function_name}, 参数: {json.dumps(arguments, ensure_ascii=False)}")
 
         try:
             if function_name not in self.tools:
@@ -88,13 +84,13 @@ class SimpleAgent:
                 result_str = json.dumps(result, ensure_ascii=False, indent=2) if isinstance(result, dict) else str(result)
 
             if verbose:
-                print(f"     ← 返回: {result_str[:100]}...")
+                logger.debug(f"返回: {result_str[:100]}...")
 
         except Exception as e:
             result_str = f"工具执行错误: {str(e)}"
             result = result_str
             if verbose:
-                print(f"     ✗ 错误: {result_str}")
+                logger.warning(f"工具执行错误: {result_str}")
 
         # 将工具结果添加到消息历史
         self.messages.append({
@@ -111,15 +107,13 @@ class SimpleAgent:
         self.messages.append({"role": "user", "content": user_message})
 
         if verbose:
-            print(f"\n{'='*60}")
-            print(f"用户: {user_message}")
-            print(f"{'='*60}")
+            logger.info(f"用户: {user_message}")
 
         tool_calls_history = []
 
         for iteration in range(max_iterations):
             if verbose:
-                print(f"\n[迭代 {iteration + 1}]")
+                logger.debug(f"[迭代 {iteration + 1}]")
 
             response = self._call_llm()
             message = response.choices[0].message
@@ -132,17 +126,14 @@ class SimpleAgent:
 
             if message.tool_calls:
                 if verbose:
-                    print(f"  💭 LLM 决定调用 {len(message.tool_calls)} 个工具")
+                    logger.info(f"LLM 决定调用 {len(message.tool_calls)} 个工具")
 
                 for tc in message.tool_calls:
                     record = self._execute_tool_call(tc, verbose)
                     tool_calls_history.append(record)
             else:
                 if verbose:
-                    print(f"\n✅ 完成！")
-                    print(f"{'='*60}")
-                    print(f"最终回复:\n{message.content}")
-                    print(f"{'='*60}")
+                    logger.info(f"完成，最终回复: {message.content[:200]}...")
 
                 return {
                     "success": True,
@@ -199,9 +190,7 @@ class CodeGenAgent(SimpleAgent):
         # 注册数据库工具
         self._register_tools()
 
-        print(f"✓ 代码生成 Agent 就绪")
-        print(f"  ✓ 输出目录: {os.path.abspath(self.output_dir)}")
-        print(f"  ✓ 包名前缀: {self.package_prefix}")
+        logger.info(f"代码生成 Agent 就绪, 输出目录: {os.path.abspath(self.output_dir)}, 包名前缀: {self.package_prefix}")
 
     # ==================== 工具注册 ====================
 
@@ -253,8 +242,8 @@ class CodeGenAgent(SimpleAgent):
         """代码生成工具的包装函数（供 Agent 调用）"""
         try:
             result = self.generate_code_for_table(table_name)
+            logger.info(f"表 {table_name} 代码生成{'成功' if result['success'] else '部分完成'}")
             lines = [
-                f"{'✅' if result['success'] else '⚠️'} 表 {table_name} 代码生成{'成功' if result['success'] else '部分完成'}",
                 f"生成文件: {len(result.get('generated_files', []))} 个",
                 f"跳过文件: {len(result.get('skipped_files', []))} 个",
             ]
@@ -271,7 +260,7 @@ class CodeGenAgent(SimpleAgent):
                 lines.append(f"\n输出目录: {self.output_dir}")
             return "\n".join(lines)
         except Exception as e:
-            return f"❌ 代码生成异常: {str(e)}\n异常类型: {type(e).__name__}"
+            return f"代码生成异常: {str(e)}, 类型: {type(e).__name__}"
 
     def _generate_batch_wrapper(self, table_names: list) -> str:
         """批量代码生成工具的包装函数"""
@@ -298,7 +287,7 @@ class CodeGenAgent(SimpleAgent):
                 f"详情:\n" + "\n".join(results)
             )
         except Exception as e:
-            return f"❌ 批量代码生成异常: {str(e)}"
+            return f"批量代码生成异常: {str(e)}"
 
     def generate_code_for_table(
         self,
@@ -332,7 +321,7 @@ class CodeGenAgent(SimpleAgent):
                         self._generate_component(component, context, overwrite_rules, errors, generated_files, skipped_files)
                 except Exception as e:
                     errors.append(f"{component}: {type(e).__name__}: {str(e)}")
-                    print(f"❌ 异常: {component} - {type(e).__name__}: {str(e)}")
+                    logger.error(f"异常: {component} - {type(e).__name__}: {str(e)}")
 
             return {
                 "success": len(errors) == 0,
@@ -357,7 +346,7 @@ class CodeGenAgent(SimpleAgent):
         # 检查是否需要跳过
         if self._should_skip(file_path, overwrite):
             skipped_files.append(file_path)
-            print(f"⊘ 跳过已存在: {file_path}")
+            logger.debug(f"跳过已存在: {file_path}")
             return
 
         # 调用 LLM 生成
@@ -370,7 +359,7 @@ class CodeGenAgent(SimpleAgent):
 
         if not success:
             errors.append(f"{component}: 无法从 LLM 输出中提取有效的代码块")
-            print(f"⚠️ {component}: 代码提取失败")
+            logger.warning(f"{component}: 代码提取失败")
             self._save_debug_info(component, response)
             return
 
@@ -405,7 +394,7 @@ class CodeGenAgent(SimpleAgent):
         # 写入 Entity（根据规则决定是否跳过）
         if entity_should_skip:
             skipped_files.append(entity_file_path)
-            print(f"⊘ 跳过已存在: {entity_file_path}")
+            logger.debug(f"跳过已存在: {entity_file_path}")
         else:
             self._write_and_track(entity_file_path, code_blocks[1], entity_overwrite, 'entity', errors, generated_files, skipped_files)
 
@@ -434,10 +423,10 @@ class CodeGenAgent(SimpleAgent):
         result = self.file.write_file(file_path, code, overwrite=overwrite)
         if result['success']:
             generated_files.append(file_path)
-            print(f"✅ 生成: {file_path} ({result.get('size', 0)} 字节)")
+            logger.info(f"生成: {file_path} ({result.get('size', 0)} 字节)")
         else:
             errors.append(f"{component}: 写入失败 - {result.get('error', '未知')}")
-            print(f"❌ {component}: 写入失败 - {result.get('error', '未知')}")
+            logger.error(f"{component}: 写入失败 - {result.get('error', '未知')}")
 
     def _save_debug_info(self, component: str, content: str):
         """保存 LLM 原始输出到调试文件"""
@@ -451,9 +440,9 @@ class CodeGenAgent(SimpleAgent):
                 f.write(f"=== {component} LLM Output ===\n")
                 f.write(f"时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
                 f.write(content)
-            print(f"💾 调试信息已保存: {debug_file}")
+            logger.info(f"调试信息已保存: {debug_file}")
         except Exception as e:
-            print(f"⚠️ 无法保存调试信息: {e}")
+            logger.warning(f"无法保存调试信息: {e}")
 
     # ==================== 代码提取 ====================
 

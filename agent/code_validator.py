@@ -3,9 +3,12 @@
 """
 import os
 import re
+import logging
 import subprocess
 from typing import Dict, List, Any
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class CodeValidator:
@@ -20,9 +23,6 @@ class CodeValidator:
             base_url: API Base URL
         """
         # 优先使用 DEEPSEEK_API_KEY，如果没有则使用 API_KEY
-        from dotenv import load_dotenv
-        load_dotenv()
-
         api_key = api_key or os.getenv("DEEPSEEK_API_KEY") or os.getenv("API_KEY")
         base_url = base_url or os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/v1")
 
@@ -30,7 +30,7 @@ class CodeValidator:
             self.client = OpenAI(api_key=api_key, base_url=base_url)
         else:
             self.client = None
-            print("⚠️ 未配置 API Key，LLM 验证功能将不可用")
+            logger.warning("未配置 API Key，LLM 验证功能将不可用")
 
     def validate_all(
         self,
@@ -69,17 +69,17 @@ class CodeValidator:
 
         # 1. LLM 自我验证
         if enable_llm and self.client:
-            print(f"🔍 执行 LLM 验证...")
+            logger.debug("执行 LLM 验证...")
             results['llm_check'] = self._llm_validate(code, component, context)
 
         # 2. 语法编译检查
         if enable_compile and component in ['entity', 'base_entity', 'mapper', 'service', 'service_impl', 'controller']:
-            print(f"🔍 执行语法检查...")
+            logger.debug("执行语法检查...")
             results['compile_check'] = self._compile_check(code, component)
 
         # 3. Prompt 符合度检查
         if enable_prompt:
-            print(f"🔍 执行 Prompt 符合度检查...")
+            logger.debug("执行 Prompt 符合度检查...")
             results['prompt_check'] = self._prompt_compliance_check(code, component, context)
 
         # 判断总体是否通过
@@ -164,16 +164,16 @@ class CodeValidator:
             suggestions = result.get('suggestions', [])
 
             if passed:
-                print(f"✅ LLM 验证通过")
+                logger.debug("LLM 验证通过")
             else:
-                print(f"⚠️ LLM 验证发现问题:")
+                logger.warning("LLM 验证发现问题:")
                 for issue in issues:
-                    print(f"   - {issue}")
+                    logger.warning(f"  - {issue}")
 
             if suggestions:
-                print(f"💡 LLM 建议:")
+                logger.info("LLM 建议:")
                 for suggestion in suggestions:
-                    print(f"   - {suggestion}")
+                    logger.info(f"  - {suggestion}")
 
             return {
                 'passed': passed,
@@ -182,8 +182,8 @@ class CodeValidator:
             }
 
         except Exception as e:
-            print(f"⚠️ LLM 验证失败: {str(e)}")
-            return {'passed': True, 'issues': [f"验证异常: {str(e)}"], 'suggestions': []}
+            logger.warning(f"LLM 验证失败: {str(e)}")
+            return {'passed': False, 'issues': [f"验证异常: {str(e)}"], 'suggestions': []}
 
     def _compile_check(self, code: str, component: str) -> Dict[str, Any]:
         """
@@ -209,7 +209,7 @@ class CodeValidator:
             java_available = False
 
         if not java_available:
-            print("⚠️ 未检测到 Java 环境，跳过编译检查")
+            logger.warning("未检测到 Java 环境，跳过编译检查")
             return {'passed': True, 'errors': [], 'skipped': True}
 
         # 创建临时文件进行编译
@@ -239,13 +239,13 @@ class CodeValidator:
             )
 
             if result.returncode == 0:
-                print(f"✅ 编译检查通过")
+                logger.debug("编译检查通过")
                 return {'passed': True, 'errors': []}
             else:
                 errors = result.stderr.strip().split('\n')
-                print(f"⚠️ 编译检查失败:")
-                for error in errors[:5]:  # 只显示前5个错误
-                    print(f"   - {error}")
+                logger.warning("编译检查失败:")
+                for error in errors[:5]:
+                    logger.warning(f"  - {error}")
                 return {'passed': False, 'errors': errors}
 
         except subprocess.TimeoutExpired:
@@ -330,7 +330,7 @@ class CodeValidator:
             # ServiceImpl 检查
             if f'class {class_name}ServiceImpl' not in code:
                 missing_items.append(f'缺少 ServiceImpl 类定义')
-            if 'implements {class_name}Service' not in code:
+            if f'implements {class_name}Service' not in code:
                 missing_items.append(f'缺少实现 {class_name}Service')
             if '@Service' not in code:
                 missing_items.append('缺少 @Service 注解')
@@ -362,11 +362,11 @@ class CodeValidator:
         passed = len(missing_items) == 0
 
         if passed:
-            print(f"✅ Prompt 符合度检查通过")
+            logger.debug("Prompt 符合度检查通过")
         else:
-            print(f"⚠️ Prompt 符合度检查发现问题:")
+            logger.warning("Prompt 符合度检查发现问题:")
             for item in missing_items:
-                print(f"   - {item}")
+                logger.warning(f"  - {item}")
 
         return {
             'passed': passed,

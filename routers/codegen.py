@@ -1,7 +1,8 @@
 """
 代码生成路由
 """
-from fastapi import APIRouter, HTTPException
+from functools import lru_cache
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 
 from schemas.codegen import (
@@ -14,14 +15,17 @@ from services.codegen_service import CodegenService
 
 router = APIRouter(prefix="/api/codegen", tags=["代码生成"])
 
-codegen_service = CodegenService()
+
+@lru_cache()
+def get_codegen_service() -> CodegenService:
+    return CodegenService()
 
 
 @router.get("/health", response_model=HealthResponse, summary="代码生成服务健康检查")
-async def health_check():
+async def health_check(service: CodegenService = Depends(get_codegen_service)):
     """检查代码生成服务健康状态"""
     try:
-        db_connected = codegen_service.check_database_connection()
+        db_connected = service.check_database_connection()
         return HealthResponse(
             status="healthy" if db_connected else "unhealthy",
             database_connected=db_connected
@@ -31,24 +35,24 @@ async def health_check():
 
 
 @router.get("/database", response_model=DatabaseInfoResponse, summary="获取数据库信息")
-async def get_database_info():
+async def get_database_info(service: CodegenService = Depends(get_codegen_service)):
     """获取数据库连接信息"""
     try:
-        info = codegen_service.get_database_info()
+        info = service.get_database_info()
         return DatabaseInfoResponse(**info)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/tables", response_model=TableListResponse, summary="列出数据库表")
-async def list_tables(prefix: Optional[str] = ""):
+async def list_tables(prefix: Optional[str] = "", service: CodegenService = Depends(get_codegen_service)):
     """
     列出数据库表
 
     - prefix: 表名前缀过滤，例如 "sys" 只显示以 "sys" 开头的表
     """
     try:
-        tables = codegen_service.list_tables(prefix=prefix)
+        tables = service.list_tables(prefix=prefix)
         return TableListResponse(
             count=len(tables),
             tables=tables
@@ -58,19 +62,19 @@ async def list_tables(prefix: Optional[str] = ""):
 
 
 @router.get("/generate", response_model=CodeGenResponse, summary="生成所有表的代码")
-async def generate_all_code():
+async def generate_all_code(service: CodegenService = Depends(get_codegen_service)):
     """
     为配置中的所有表生成 Java 代码
     """
     try:
-        result = codegen_service.generate_all()
+        result = service.generate_all()
         return CodeGenResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/generate", response_model=CodeGenResponse, summary="生成指定表的代码")
-async def generate_code(tables: list[str]):
+async def generate_code(tables: list[str], service: CodegenService = Depends(get_codegen_service)):
     """
     为指定的表生成 Java 代码
 
@@ -80,7 +84,7 @@ async def generate_code(tables: list[str]):
         if not tables:
             raise HTTPException(status_code=400, detail="表名列表不能为空")
 
-        result = codegen_service.generate_tables(tables)
+        result = service.generate_tables(tables)
         return CodeGenResponse(**result)
     except HTTPException:
         raise
@@ -88,5 +92,4 @@ async def generate_code(tables: list[str]):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# 导出路由
 codegen_router = router

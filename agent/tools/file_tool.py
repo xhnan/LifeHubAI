@@ -18,7 +18,28 @@ class FileTool:
         Args:
             base_dir: 基础工作目录，默认为当前目录
         """
-        self.base_dir = base_dir or os.getcwd()
+        self.base_dir = os.path.abspath(base_dir or os.getcwd())
+
+    def _resolve_and_validate(self, path: str) -> str:
+        """
+        解析路径并校验是否在 base_dir 沙箱内
+
+        Args:
+            path: 文件或目录路径
+
+        Returns:
+            解析后的绝对路径
+
+        Raises:
+            ValueError: 路径越界时抛出
+        """
+        if not os.path.isabs(path):
+            path = os.path.join(self.base_dir, path)
+        abs_path = os.path.normpath(os.path.abspath(path))
+        abs_base = os.path.normpath(self.base_dir)
+        if not abs_path.startswith(abs_base + os.sep) and abs_path != abs_base:
+            raise ValueError(f"路径越界（沙箱限制）: {path}")
+        return abs_path
 
     def write_file(
         self,
@@ -43,11 +64,7 @@ class FileTool:
             }
         """
         try:
-            # 转换为绝对路径
-            if not os.path.isabs(file_path):
-                file_path = os.path.join(self.base_dir, file_path)
-
-            file_path = os.path.abspath(file_path)
+            file_path = self._resolve_and_validate(file_path)
 
             # 检查文件是否已存在
             if os.path.exists(file_path) and not overwrite:
@@ -102,11 +119,7 @@ class FileTool:
             }
         """
         try:
-            # 转换为绝对路径
-            if not os.path.isabs(file_path):
-                file_path = os.path.join(self.base_dir, file_path)
-
-            file_path = os.path.abspath(file_path)
+            file_path = self._resolve_and_validate(file_path)
 
             # 检查文件是否存在
             if not os.path.exists(file_path):
@@ -160,11 +173,7 @@ class FileTool:
             }
         """
         try:
-            # 转换为绝对路径
-            if not os.path.isabs(dir_path):
-                dir_path = os.path.join(self.base_dir, dir_path)
-
-            dir_path = os.path.abspath(dir_path)
+            dir_path = self._resolve_and_validate(dir_path)
 
             # 检查是否已存在
             exists = os.path.exists(dir_path)
@@ -220,11 +229,7 @@ class FileTool:
             }
         """
         try:
-            # 转换为绝对路径
-            if not os.path.isabs(path):
-                path = os.path.join(self.base_dir, path)
-
-            path = os.path.abspath(path)
+            path = self._resolve_and_validate(path)
 
             exists = os.path.exists(path)
 
@@ -276,11 +281,7 @@ class FileTool:
             }
         """
         try:
-            # 转换为绝对路径
-            if not os.path.isabs(dir_path):
-                dir_path = os.path.join(self.base_dir, dir_path)
-
-            dir_path = os.path.abspath(dir_path)
+            dir_path = self._resolve_and_validate(dir_path)
 
             # 检查目录是否存在
             if not os.path.exists(dir_path):
@@ -347,13 +348,7 @@ class FileTool:
             }
         """
         try:
-            root_path = root_path or self.base_dir
-
-            # 转换为绝对路径
-            if not os.path.isabs(root_path):
-                root_path = os.path.join(self.base_dir, root_path)
-
-            root_path = os.path.abspath(root_path)
+            root_path = self._resolve_and_validate(root_path or self.base_dir)
 
             # 使用 glob 查找文件
             search_pattern = os.path.join(root_path, pattern)

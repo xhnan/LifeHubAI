@@ -45,6 +45,10 @@ class PromptLoader:
         Returns:
             模板内容字符串
         """
+        # 安全校验：禁止路径遍历
+        if '..' in template_name or '/' in template_name or '\\' in template_name:
+            raise ValueError(f"非法模板名: {template_name}")
+
         template_path = os.path.join(self.prompt_dir, "java", f"{template_name}.txt")
 
         if not os.path.exists(template_path):
