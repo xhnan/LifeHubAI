@@ -60,3 +60,5 @@ MANIFEST
 venv/
 env/
 ENV/
+# Claude 本地配置与工作树
+.claude/
