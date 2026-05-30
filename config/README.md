@@ -78,7 +78,7 @@ if config.is_production():
 # 获取配置值
 api_key = config.get("DEEPSEEK_API_KEY")
 port = config.get_int("DB_PORT", 5432)
-enabled = config.get_bool("GRPC_ENABLED", False)
+output_dir = config.get("CODE_OUTPUT_DIR", "./output")
 
 # 快捷函数
 model = get_setting("LLM_MODEL")
@@ -103,9 +103,6 @@ db_config = config.get_database_config()
 
 # AI 配置
 ai_config = config.get_ai_config()
-
-# gRPC 配置
-grpc_config = config.get_grpc_config()
 
 # 代码生成配置
 codegen_config = config.get_codegen_config()

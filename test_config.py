@@ -29,7 +29,6 @@ def test_config():
         ("数据库主机", config.get("DB_HOST")),
         ("数据库端口", config.get_int("DB_PORT")),
         ("LLM 模型", config.get("LLM_MODEL")),
-        ("gRPC 启用", config.get_bool("GRPC_ENABLED")),
     ]
 
     print(f"\n配置测试:")
@@ -54,9 +53,6 @@ def test_config():
     else:
         print(f"  ✗ AI: 未配置 API Key")
         all_passed = False
-
-    grpc_config = config.get_grpc_config()
-    print(f"  ✓ gRPC: {'启用' if grpc_config['enabled'] else '禁用'} ({grpc_config['host']}:{grpc_config['port']})")
 
     # 测试结果
     print("\n" + "="*60)

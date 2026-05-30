@@ -23,11 +23,6 @@ psycopg2-binary>=2.9.9
 python-dotenv==1.0.1
 importlib-metadata>=6.0
 
-# gRPC
-grpcio>=1.60.0
-grpcio-tools>=1.60.0
-protobuf>=4.25.0
-
 # HTTP
 requests>=2.32.0
 

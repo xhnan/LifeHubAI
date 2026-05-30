@@ -9,7 +9,9 @@ from schemas.codegen import (
     CodeGenResponse,
     TableListResponse,
     DatabaseInfoResponse,
-    HealthResponse
+    HealthResponse,
+    AgentGenerateRequest,
+    AgentGenerateResponse,
 )
 from services.codegen_service import CodegenService
 
@@ -30,6 +32,30 @@ async def health_check(service: CodegenService = Depends(get_codegen_service)):
             status="healthy" if db_connected else "unhealthy",
             database_connected=db_connected
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/ping", summary="Ping 测试")
+async def ping():
+    """连通性测试（替代原 gRPC Health.Ping）"""
+    return {"message": "pong"}
+
+
+@router.post(
+    "/agent",
+    response_model=AgentGenerateResponse,
+    summary="基于自然语言生成代码",
+    description="供 LifeHubServer 后端调用，通过自然语言描述驱动 Agent 生成 Java 代码（替代原 gRPC CodeGeneration.GenerateCode）"
+)
+async def generate_from_prompt(
+    request: AgentGenerateRequest,
+    service: CodegenService = Depends(get_codegen_service)
+):
+    """通过自然语言描述生成代码"""
+    try:
+        result = service.generate_from_prompt(request.prompt)
+        return AgentGenerateResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -29,7 +29,7 @@ def example_basic_usage():
 
     # 获取不同类型的配置值
     print(f"\n数据库端口: {config.get_int('DB_PORT', 5432)}")
-    print(f"gRPC 启用: {config.get_bool('GRPC_ENABLED', False)}")
+    print(f"代码输出目录: {config.get('CODE_OUTPUT_DIR', './output')}")
 
     # 使用快捷函数
     print(f"\nLLM 模型: {get_setting('LLM_MODEL', 'unknown')}")

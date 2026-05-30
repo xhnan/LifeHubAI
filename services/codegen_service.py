@@ -2,6 +2,7 @@
 代码生成服务
 """
 import os
+import re
 import logging
 import psycopg2
 import yaml
@@ -20,6 +21,8 @@ class CodegenService:
             "user": os.getenv("DB_USER"),
             "password": os.getenv("DB_PASSWORD")
         }
+        # 基于自然语言的代码生成 Agent（延迟初始化）
+        self._agent = None
 
         # 加载配置文件
         config_path = os.path.join(os.path.dirname(__file__), "../Generate/config.yaml")
@@ -154,3 +157,128 @@ class CodegenService:
             "generated_tables": generated,
             "failed_tables": failed
         }
+
+    # ==================== 基于自然语言的代码生成（Agent） ====================
+
+    def _get_agent(self):
+        """获取（并延迟初始化）代码生成 Agent"""
+        if self._agent is None:
+            from agent.code_agent import CodeGenAgent
+            self._agent = CodeGenAgent()
+            logger.info("CodeGenAgent 初始化成功")
+        return self._agent
+
+    def generate_from_prompt(self, prompt: str) -> dict:
+        """
+        通过自然语言描述生成代码
+
+        Args:
+            prompt: 用户的自然语言描述
+
+        Returns:
+            dict: { success, message, description, files, error, steps }
+        """
+        if not prompt:
+            return {
+                "success": False,
+                "message": "请求参数不能为空",
+                "description": "",
+                "files": [],
+                "error": "prompt 参数为空",
+                "steps": [],
+            }
+
+        try:
+            agent = self._get_agent()
+        except Exception as e:
+            logger.error(f"CodeGenAgent 初始化失败: {e}", exc_info=True)
+            return {
+                "success": False,
+                "message": "Agent 初始化失败",
+                "description": "",
+                "files": [],
+                "error": f"CodeGenAgent 不可用: {str(e)}",
+                "steps": [],
+            }
+
+        try:
+            result = agent.run(user_message=prompt, max_iterations=20, verbose=True)
+
+            if result.get("success"):
+                files = self._extract_files_from_result(result)
+                return {
+                    "success": True,
+                    "message": "代码生成成功",
+                    "description": result.get("final_response", ""),
+                    "files": files,
+                    "error": "",
+                    "steps": [str(tc) for tc in result.get("tool_calls", [])],
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "代码生成失败",
+                    "description": "",
+                    "files": [],
+                    "error": result.get("error", "未知错误"),
+                    "steps": [str(tc) for tc in result.get("tool_calls", [])],
+                }
+        except Exception as e:
+            logger.error(f"代码生成异常: {e}", exc_info=True)
+            return {
+                "success": False,
+                "message": "服务异常",
+                "description": "",
+                "files": [],
+                "error": str(e),
+                "steps": [],
+            }
+
+    def _extract_files_from_result(self, result: dict) -> list:
+        """从 Agent 结果中提取文件信息"""
+        files = []
+
+        for tool_call in result.get("tool_calls", []):
+            tool_name = tool_call.get("name", "")
+            tool_result = tool_call.get("result", "")
+
+            if "write_file" in tool_name or tool_name == "write_file":
+                if isinstance(tool_result, dict):
+                    path = tool_result.get("path", "")
+                    file_type = self._infer_file_type(path)
+                    files.append({
+                        "path": path,
+                        "type": file_type,
+                        "description": f"生成的 {file_type} 文件",
+                    })
+
+        # 如果工具调用中没有文件信息，尝试从 final_response 中解析
+        if not files:
+            final_response = result.get("final_response", "")
+            pattern = r'([\w/]+\.(?:java|xml))'
+            for match in re.findall(pattern, final_response):
+                file_type = self._infer_file_type(match)
+                files.append({
+                    "path": match,
+                    "type": file_type,
+                    "description": f"生成的 {file_type} 文件",
+                })
+
+        return files
+
+    def _infer_file_type(self, file_path: str) -> str:
+        """从文件路径推断文件类型"""
+        path_lower = file_path.lower()
+
+        if "base" in path_lower and "entity" in path_lower:
+            return "base_entity"
+        elif "entity" in path_lower or "model" in path_lower:
+            return "entity"
+        elif "mapper" in path_lower:
+            return "mapper" if file_path.endswith(".java") else "mapper_xml"
+        elif "service" in path_lower:
+            return "service_impl" if "impl" in path_lower else "service"
+        elif "controller" in path_lower:
+            return "controller"
+        else:
+            return "unknown"

@@ -19,7 +19,6 @@ _ALLOWED_NACOS_KEYS: Set[str] = {
     "HEALTH_LLM_API_KEY", "HEALTH_LLM_BASE_URL", "HEALTH_LLM_MODEL",
     "FASTAPI_HOST", "FASTAPI_PORT",
     "CODE_OUTPUT_DIR", "CODE_PACKAGE_PREFIX",
-    "GRPC_ENABLED", "GRPC_HOST", "GRPC_PORT",
     "NACOS_SERVICE_NAME", "NACOS_SERVICE_IP",
 }
 
@@ -301,14 +300,6 @@ class Config:
             "api_key": self.get("DEEPSEEK_API_KEY", ""),
             "base_url": self.get("DEEPSEEK_API_URL", "https://api.deepseek.com/v1"),
             "model": self.get("LLM_MODEL", "deepseek-chat"),
-        }
-
-    def get_grpc_config(self) -> Dict[str, Any]:
-        """获取 gRPC 配置"""
-        return {
-            "enabled": self.get_bool("GRPC_ENABLED", False),
-            "host": self.get("GRPC_HOST", "0.0.0.0"),
-            "port": self.get_int("GRPC_PORT", 50051),
         }
 
     def get_codegen_config(self) -> Dict[str, Any]:

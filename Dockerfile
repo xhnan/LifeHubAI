@@ -1,6 +1,6 @@
 # ============================================
 # LifeHubAI Dockerfile
-# Python 3.10 + FastAPI + gRPC
+# Python 3.10 + FastAPI
 # ============================================
 
 # ---------- 构建阶段 ----------
@@ -41,8 +41,8 @@ ENV ENVIRONMENT=production \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# 暴露端口：FastAPI HTTP + gRPC
-EXPOSE 8000 50051
+# 暴露端口：FastAPI HTTP
+EXPOSE 8000
 
 # 健康检查（FastAPI /health 端点）
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \

@@ -70,23 +70,6 @@ def start_production():
         print(f"✓ Nacos 命名空间: {config.get('NACOS_NAMESPACE')}")
         print(f"✓ Nacos Data ID: {config.get('NACOS_CONFIG_DATA_ID')}")
 
-    # 启动 gRPC 服务（如果启用）
-    import threading
-    grpc_config = config.get_grpc_config()
-    if grpc_config.get("enabled"):
-        from grpc_server.server import GRPCServer
-        grpc_port = grpc_config.get("port", 50051)
-
-        def run_grpc():
-            grpc_server = GRPCServer(port=grpc_port)
-            grpc_server.start()
-
-        grpc_thread = threading.Thread(target=run_grpc, daemon=True, name="grpc-server")
-        grpc_thread.start()
-        print(f"✓ gRPC 服务已启动 (端口: {grpc_port})")
-    else:
-        print("⚠️ gRPC 未启用 (GRPC_ENABLED=false)")
-
     # 启动 FastAPI
     import uvicorn
     from main import app
